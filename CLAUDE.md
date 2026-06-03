@@ -18,7 +18,7 @@ Generic inbound voice appointment-booking agent. India-only, inbound-only. One e
 9. In-call state is in-memory per instance, but a **checkpoint is written to the shared store on every state transition** (resume must work cross-instance).
 
 ## Stack
-Pipecat (Python 3.11+, async) voice service · Supabase (Postgres + RLS + Edge Functions/Deno-TS) · Redis (resume checkpoints) · Plivo (telephony) · Deepgram/Sarvam (STT) · Claude Haiku 4.5 + prompt caching (NLU) · Smallest/Sarvam (TTS) · N8N (async post-call) · Next.js/Vercel (admin) · Coval (regression) · Langfuse/OTel (observability).
+Pipecat (Python 3.11+, async) voice service · Supabase (Postgres + RLS + Edge Functions/Deno-TS) · Redis (resume checkpoints) · Twilio (telephony) · Deepgram/Sarvam (STT) · Claude Haiku 4.5 + prompt caching (NLU) · Smallest/Sarvam (TTS) · N8N (async post-call) · Next.js/Vercel (admin) · Coval (regression) · Langfuse/OTel (observability).
 
 ## Directory map
 ```
