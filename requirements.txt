@@ -1,0 +1,29 @@
+# Core
+pydantic>=2.0,<3.0
+python-dateutil>=2.8
+
+# Voice pipeline (Step 0 spike)
+pipecat-ai>=0.5
+deepgram-sdk>=3.0
+plivo>=4.0
+
+# LLM
+anthropic>=0.30
+
+# Data
+supabase>=2.0
+redis>=5.0
+
+# Date resolution (Step 3)
+dateparser>=1.2
+holidays>=0.40
+
+# Observability
+opentelemetry-sdk>=1.20
+langfuse>=2.0
+
+# Dev
+pytest>=8.0
+pytest-asyncio>=0.23
+ruff>=0.4
+black>=24.0
