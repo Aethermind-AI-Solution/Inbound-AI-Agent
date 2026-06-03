@@ -2,7 +2,7 @@
   "meta": {
     "tenant_id": "t-salon-001",
     "sector": "salon",
-    "config_version": 1,
+    "config_version": "1.0.0",
     "status": "draft"
   },
   "persona": {

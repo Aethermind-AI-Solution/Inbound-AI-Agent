@@ -30,7 +30,7 @@ def _meta(**kwargs):
     base = {
         "tenant_id": "tenant_001",
         "sector": "salon",
-        "config_version": 1,
+        "config_version": "1.0.0",
         "status": "draft",
     }
     base.update(kwargs)
@@ -193,7 +193,7 @@ class TestMetaConfig:
         m = _meta()
         assert m.tenant_id == "tenant_001"
         assert m.sector == "salon"
-        assert m.config_version == 1
+        assert m.config_version == "1.0.0"
         assert m.status == "draft"
 
     def test_all_sectors(self):
@@ -214,7 +214,7 @@ class TestMetaConfig:
 
     def test_tenant_id_required(self):
         with pytest.raises(ValidationError):
-            MetaConfig(sector="salon", config_version=1, status="draft")
+            MetaConfig(sector="salon", config_version="1.0.0", status="draft")
 
 
 # ---------------------------------------------------------------------------

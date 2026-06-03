@@ -37,7 +37,7 @@ VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 class MetaConfig(BaseModel):
     tenant_id: str
     sector: str
-    config_version: int
+    config_version: str
     status: str
 
     @field_validator("sector")

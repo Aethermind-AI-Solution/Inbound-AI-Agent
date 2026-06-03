@@ -33,7 +33,7 @@ def _meta(**kwargs):
     base = {
         "tenant_id": "tenant_001",
         "sector": "salon",
-        "config_version": 1,
+        "config_version": "1.0.0",
         "status": "draft",
     }
     base.update(kwargs)
