@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "tenant_id": "t-salon-001",
+    "sector": "salon",
+    "config_version": 1,
+    "status": "draft"
+  },
+  "persona": {
+    "business_name": "Glamour Salon",
+    "greeting": "Namaste, Glamour Salon mein aapka swagat hai.",
+    "ai_disclosure": "Aap ek AI assistant se baat kar rahe hain.",
+    "tone": "warm",
+    "languages": ["en-IN", "hi-IN"],
+    "fallback_language": "en-IN",
+    "language_policy": {
+      "greeting": "bilingual",
+      "match_caller": true
+    }
+  },
+  "integration": {
+    "calendar_provider": "native_supabase",
+    "adapter_id": null,
+    "credentials_ref": null,
+    "write_back": true,
+    "system_of_record": "native",
+    "external_unreachable_policy": "trust_mirror"
+  },
+  "auth": {
+    "levels": ["none", "otp"],
+    "action_policy": {
+      "book": "none",
+      "cancel": "otp",
+      "take_payment": "otp"
+    },
+    "otp_channel": "sms_registered_number",
+    "otp_entry": "dtmf",
+    "soft_match_fields": ["phone"]
+  },
+  "edge_profile": {
+    "caller_demographic": "general",
+    "endpointing_ms": 500,
+    "barge_in": true,
+    "asr_lexicon": ["Priya", "Neha", "haircut", "colour", "blowdry"],
+    "noise_profile": "moderate",
+    "dtmf_fallback": true
+  },
+  "escalation": {
+    "chain": [
+      {"type": "transfer", "number": "+919876543210"},
+      {"type": "callback_queue", "number": null},
+      {"type": "sms_owner", "number": "+919876543210"}
+    ],
+    "trigger_on": ["agent_unavailable", "user_request", "payment_failed"]
+  },
+  "booking_model": {
+    "resources": [
+      {
+        "id": "stylist_priya",
+        "name": "Priya",
+        "type": "stylist",
+        "capacity": 1,
+        "tags": ["hair", "colour"],
+        "calendar_ref": null
+      },
+      {
+        "id": "stylist_neha",
+        "name": "Neha",
+        "type": "stylist",
+        "capacity": 1,
+        "tags": ["hair", "blowdry"],
+        "calendar_ref": null
+      }
+    ],
+    "services": [
+      {
+        "id": "svc_haircut",
+        "name": "Haircut",
+        "resource_type": "stylist",
+        "duration_min": 30,
+        "booking_mode": "exclusive",
+        "price": 300.0,
+        "deposit": null,
+        "custom_fields": []
+      },
+      {
+        "id": "svc_hair_color",
+        "name": "Hair Color",
+        "resource_type": "stylist",
+        "duration_min": 120,
+        "booking_mode": "exclusive",
+        "price": 1200.0,
+        "deposit": 300.0,
+        "custom_fields": []
+      }
+    ],
+    "business_hours": {
+      "mon": ["09:00-19:00"],
+      "tue": ["09:00-19:00"],
+      "wed": ["09:00-19:00"],
+      "thu": ["09:00-19:00"],
+      "fri": ["09:00-19:00"],
+      "sat": ["10:00-18:00"],
+      "sun": []
+    },
+    "booking_window_days": 30,
+    "min_notice_min": 60
+  },
+  "guardrails": {
+    "max_call_seconds": 300,
+    "max_turns": 20,
+    "monthly_budget_inr": 5000.0,
+    "scope": "global",
+    "recording_consent": true,
+    "retention_days": 90
+  }
+}
