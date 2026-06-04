@@ -238,3 +238,22 @@ class TestSilenceTimer:
             if c[0][0].type == EventType.SILENCE
         ]
         assert len(silence_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_silence_fires_end_call_does_not_self_cancel(self, adapter, mock_dm):
+        adapter._started = True
+        pushed_frames = []
+        adapter.push_frame = AsyncMock(side_effect=lambda f, d=None: pushed_frames.append(f))
+
+        mock_dm.handle_event.return_value = Action(
+            type=ActionType.END_CALL, text="Goodbye"
+        )
+
+        adapter._reset_silence_timer(0.05)
+        await asyncio.sleep(0.1)
+
+        text_frames = [f for f in pushed_frames if isinstance(f, TextFrame)]
+        end_frames = [f for f in pushed_frames if isinstance(f, EndTaskFrame)]
+        assert len(text_frames) == 1
+        assert text_frames[0].text == "Goodbye"
+        assert len(end_frames) == 1

@@ -28,7 +28,6 @@ class PipelineAdapter(FrameProcessor):
         self._dm = dialogue_manager
         self._started = False
         self._silence_task: asyncio.Task | None = None
-        self._last_timeout: float = 10.0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -41,7 +40,7 @@ class PipelineAdapter(FrameProcessor):
             except Exception:
                 logger.exception("Error in DialogueManager.start()")
                 await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
-            return
+                return
 
         if isinstance(frame, TranscriptionFrame):
             if not frame.finalized:
@@ -67,8 +66,7 @@ class PipelineAdapter(FrameProcessor):
                 await self.push_frame(
                     TextFrame(text=action.text), FrameDirection.DOWNSTREAM
                 )
-            self._last_timeout = action.timeout_s
-            self._reset_silence_timer(self._last_timeout)
+            self._reset_silence_timer(action.timeout_s)
         elif action.type == ActionType.END_CALL:
             self._cancel_silence_timer()
             if action.text:
@@ -79,10 +77,11 @@ class PipelineAdapter(FrameProcessor):
 
     def _reset_silence_timer(self, timeout: float) -> None:
         self._cancel_silence_timer()
-        self._silence_task = asyncio.ensure_future(self._silence_watchdog(timeout))
+        self._silence_task = asyncio.create_task(self._silence_watchdog(timeout))
 
     async def _silence_watchdog(self, timeout: float) -> None:
         await asyncio.sleep(timeout)
+        self._silence_task = None
         event = CallEvent(type=EventType.SILENCE)
         try:
             action = await self._dm.handle_event(event)
