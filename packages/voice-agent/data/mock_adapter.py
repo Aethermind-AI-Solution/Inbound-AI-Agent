@@ -12,6 +12,7 @@ class MockDataAdapter:
         self._bookings: dict[str, dict[str, Any]] = {
             "booking-1": {
                 "id": "booking-1",
+                "tenant_id": "t1",
                 "service_id": "s1",
                 "resource_id": "r1",
                 "caller_id": "caller-1",
@@ -80,6 +81,7 @@ class MockDataAdapter:
         self._confirmed_holds[hold_id] = booking_id
         self._bookings[booking_id] = {
             "id": booking_id,
+            "tenant_id": tenant_id,
             "service_id": service_id,
             "resource_id": resource_id,
             "caller_id": caller_id,
@@ -96,7 +98,7 @@ class MockDataAdapter:
     def lookup_bookings(self, tenant_id: str, caller_id: str) -> list[dict[str, Any]]:
         return [
             b for b in self._bookings.values()
-            if b["caller_id"] == caller_id
+            if b.get("tenant_id") == tenant_id and b["caller_id"] == caller_id
         ]
 
     def cancel_booking(self, tenant_id: str, booking_id: str, caller_id: str) -> bool:

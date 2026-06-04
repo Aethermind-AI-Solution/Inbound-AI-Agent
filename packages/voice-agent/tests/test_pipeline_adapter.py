@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pipecat.frames.frames import EndTaskFrame, TextFrame
+
 from packages.voice_agent.dialogue.models import Action, ActionType, CallEvent, EventType
 
 
@@ -110,7 +112,9 @@ class TestOutboundTranslation:
         await adapter.process_frame(frame, MagicMock())
 
         assert len(pushed_frames) == 2
+        assert isinstance(pushed_frames[0], TextFrame)
         assert pushed_frames[0].text == "Goodbye!"
+        assert isinstance(pushed_frames[1], EndTaskFrame)
 
     @pytest.mark.asyncio
     async def test_end_call_no_text_pushes_only_end_task(self, adapter, mock_dm):
@@ -124,6 +128,7 @@ class TestOutboundTranslation:
         await adapter.process_frame(frame, MagicMock())
 
         assert len(pushed_frames) == 1
+        assert isinstance(pushed_frames[0], EndTaskFrame)
 
 
 class TestErrorBoundary:
@@ -139,6 +144,7 @@ class TestErrorBoundary:
         await adapter.process_frame(frame, MagicMock())
 
         assert len(pushed_frames) == 1
+        assert isinstance(pushed_frames[0], EndTaskFrame)
 
 
 class TestMultipleTranscriptions:
