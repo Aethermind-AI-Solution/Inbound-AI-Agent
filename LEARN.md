@@ -33,5 +33,25 @@ Fix: offer from Supabase mirror; verify at hold only; sync async.
 
 ---
 
+## Latency baseline
+
+### [2026-06-04] Voice spike — Step 0 baseline · area: voice
+Stack: Pipecat 1.3.0 · Deepgram Nova-2 STT · Deepgram Aura TTS (aura-asteria-en) · SileroVAD · LocalAudioTransport (MacBook mic/speaker)
+
+| Component | Latency |
+|-----------|---------|
+| Pipeline overhead (transcription→TTS push) | ~25ms |
+| Deepgram TTS TTFB | 264–404ms (P50 ~300ms) |
+| Deepgram STT (estimated from Deepgram docs) | ~300–500ms |
+| **Total estimated turn latency** | **~600–900ms** |
+
+Notes:
+- Local mic test only (no Twilio telephony overhead yet).
+- Audio feedback loop solved with: (a) 4s cooldown after each echo, (b) "you said" text filter.
+- Pipecat v1.3.0: `PipelineTask` → deprecated, use `PipelineWorker`. `PipelineRunner` → use `WorkerRunner`. VAD import path: `pipecat.audio.vad.silero` (not `pipecat.vad.silero`).
+- pyaudio on arm64 Mac: must build from source with `ARCHFLAGS="-arch arm64" pip install --no-cache-dir --no-binary :all: pyaudio`.
+
+---
+
 ## Bug log
 *(append real bugs below as they occur, newest first, using the template)*
