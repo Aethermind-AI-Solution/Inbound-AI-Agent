@@ -96,11 +96,12 @@ class MockDataAdapter:
     def lookup_bookings(self, tenant_id: str, caller_id: str) -> list[dict[str, Any]]:
         return [
             b for b in self._bookings.values()
-            if b["caller_id"] == caller_id and b["status"] == "confirmed"
+            if b["caller_id"] == caller_id
         ]
 
     def cancel_booking(self, tenant_id: str, booking_id: str, caller_id: str) -> bool:
-        if booking_id in self._bookings:
-            self._bookings[booking_id]["status"] = "cancelled"
+        b = self._bookings.get(booking_id)
+        if b and b["caller_id"] == caller_id:
+            b["status"] = "cancelled"
             return True
         return False

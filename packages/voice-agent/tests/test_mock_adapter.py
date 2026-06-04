@@ -78,5 +78,9 @@ class TestMockCancelBooking:
         adapter.cancel_booking("t1", "booking-1", "caller-1")
         bookings = adapter.lookup_bookings("t1", "caller-1")
         cancelled = [b for b in bookings if b["id"] == "booking-1"]
-        if cancelled:
-            assert cancelled[0]["status"] == "cancelled"
+        assert len(cancelled) == 1
+        assert cancelled[0]["status"] == "cancelled"
+
+    def test_cancel_wrong_caller_returns_false(self):
+        adapter = MockDataAdapter()
+        assert adapter.cancel_booking("t1", "booking-1", "wrong-caller") is False
