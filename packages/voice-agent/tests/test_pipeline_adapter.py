@@ -158,3 +158,83 @@ class TestMultipleTranscriptions:
             await adapter.process_frame(frame, MagicMock())
 
         assert mock_dm.handle_event.call_count == 3
+
+
+class TestSilenceTimer:
+    @pytest.mark.asyncio
+    async def test_silence_fires_after_timeout(self, adapter, mock_dm):
+        adapter._started = True
+        pushed_frames = []
+        adapter.push_frame = AsyncMock(side_effect=lambda f, d=None: pushed_frames.append(f))
+
+        mock_dm.handle_event.return_value = Action(
+            type=ActionType.ASK, text="Are you still there?"
+        )
+
+        adapter._reset_silence_timer(0.05)
+        await asyncio.sleep(0.1)
+
+        mock_dm.handle_event.assert_called_once()
+        event = mock_dm.handle_event.call_args[0][0]
+        assert event.type == EventType.SILENCE
+
+    @pytest.mark.asyncio
+    async def test_silence_timer_resets_on_transcription(self, adapter, mock_dm):
+        adapter._started = True
+        adapter.push_frame = AsyncMock()
+
+        adapter._reset_silence_timer(0.1)
+        await asyncio.sleep(0.05)
+
+        frame = make_transcription_frame("hello", finalized=True)
+        await adapter.process_frame(frame, MagicMock())
+
+        await asyncio.sleep(0.1)
+        silence_calls = [
+            c for c in mock_dm.handle_event.call_args_list
+            if c[0][0].type == EventType.SILENCE
+        ]
+        assert len(silence_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_silence_timer_cancelled_on_end_call(self, adapter, mock_dm):
+        adapter._started = True
+        adapter.push_frame = AsyncMock()
+
+        adapter._reset_silence_timer(0.1)
+
+        mock_dm.handle_event.return_value = Action(type=ActionType.END_CALL, text="Bye")
+        frame = make_transcription_frame("bye", finalized=True)
+        await adapter.process_frame(frame, MagicMock())
+
+        await asyncio.sleep(0.15)
+        silence_calls = [
+            c for c in mock_dm.handle_event.call_args_list
+            if c[0][0].type == EventType.SILENCE
+        ]
+        assert len(silence_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_silence_timer_uses_action_timeout(self, adapter, mock_dm):
+        adapter._started = True
+        pushed_frames = []
+        adapter.push_frame = AsyncMock(side_effect=lambda f, d=None: pushed_frames.append(f))
+
+        mock_dm.handle_event.return_value = Action(
+            type=ActionType.ASK, text="Pick a service", timeout_s=0.05
+        )
+
+        frame = make_transcription_frame("hello", finalized=True)
+        await adapter.process_frame(frame, MagicMock())
+
+        mock_dm.handle_event.reset_mock()
+        mock_dm.handle_event.return_value = Action(
+            type=ActionType.ASK, text="Are you still there?"
+        )
+        await asyncio.sleep(0.1)
+
+        silence_calls = [
+            c for c in mock_dm.handle_event.call_args_list
+            if c[0][0].type == EventType.SILENCE
+        ]
+        assert len(silence_calls) == 1
