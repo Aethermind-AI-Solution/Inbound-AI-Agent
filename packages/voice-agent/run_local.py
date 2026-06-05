@@ -1,7 +1,8 @@
 """
 Local voice agent — speak into your mic, talk to the dialogue state machine.
 
-Uses MockDataAdapter (no Supabase needed) and StubNLU (keyword matching).
+Uses MockDataAdapter (no Supabase needed). NLU: Claude Haiku if ANTHROPIC_API_KEY
+is set, otherwise falls back to StubNLU (keyword matching).
 Requires DEEPGRAM_API_KEY in environment or .env file.
 
 Usage:

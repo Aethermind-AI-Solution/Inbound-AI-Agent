@@ -22,18 +22,22 @@ class AnthropicLLMClient:
         self._model = model
 
     async def complete(self, system: str, user: str) -> str:
-        response = await self._client.messages.create(
-            model=self._model,
-            max_tokens=50,
-            temperature=0,
-            system=[
-                {
-                    "type": "text",
-                    "text": system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": user}],
-            timeout=3.0,
-        )
-        return response.content[0].text
+        try:
+            response = await self._client.messages.create(
+                model=self._model,
+                max_tokens=50,
+                temperature=0,
+                system=[
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": user}],
+                timeout=3.0,
+            )
+            return response.content[0].text
+        except (anthropic.APITimeoutError, anthropic.APIError):
+            logger.exception("Anthropic API error")
+            raise
