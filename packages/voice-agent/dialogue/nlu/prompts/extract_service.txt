@@ -1,0 +1,6 @@
+The caller said: "$text"
+
+Which service are they requesting? Available services:
+$services_list
+
+Respond with the service ID only (e.g. "s1"). If unclear, respond "none".

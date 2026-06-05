@@ -1,0 +1,4 @@
+Classify the caller's intent from this transcript:
+"$text"
+
+Respond with exactly one of: $available_intents

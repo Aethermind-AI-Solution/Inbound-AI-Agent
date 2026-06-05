@@ -1,0 +1,4 @@
+The caller said: "$text"
+
+Is this affirmative (yes/agree), negative (no/disagree), or unclear?
+Respond with exactly one of: yes, no, unclear
