@@ -45,6 +45,7 @@ async def main() -> None:
         )
         from pipecat.services.deepgram.stt import DeepgramSTTService
         from pipecat.audio.vad.silero import SileroVADAnalyzer
+        from pipecat.audio.vad.vad_analyzer import VADParams
     except ImportError as e:
         logger.error(
             f"Missing dependency: {e}\n"
@@ -64,7 +65,8 @@ async def main() -> None:
         try:
             from pipecat.services.deepgram.tts import DeepgramTTSService
             tts_service = DeepgramTTSService(
-                api_key=deepgram_key, voice="aura-asteria-en"
+                api_key=deepgram_key,
+                settings=DeepgramTTSService.Settings(voice="aura-asteria-en"),
             )
             logger.info("Using Deepgram TTS")
         except (ImportError, Exception):
@@ -124,19 +126,26 @@ async def main() -> None:
     )
     adapter = PipelineAdapter(dm)
 
+    vad_params = VADParams(confidence=0.5, min_volume=0.3, start_secs=0.15, stop_secs=0.3)
     transport = LocalAudioTransport(
         LocalAudioTransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             vad_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(params=vad_params),
         )
     )
 
     stt = DeepgramSTTService(
         api_key=deepgram_key,
-        language="en",
-        model="nova-2",
+        settings=DeepgramSTTService.Settings(
+            language="en",
+            model="nova-2",
+            interim_results=True,
+            endpointing=300,
+            utterance_end_ms=1000,
+            smart_format=True,
+        ),
     )
 
     pipeline = Pipeline([

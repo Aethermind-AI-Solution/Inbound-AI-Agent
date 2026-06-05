@@ -59,7 +59,7 @@ class Action:
     type: ActionType
     text: str | None = None
     next_state: str | None = None
-    timeout_s: float = 10.0
+    timeout_s: float = 15.0
     checkpoint: bool = True
 
 

@@ -61,7 +61,7 @@ class TestAction:
         assert action.type == ActionType.ASK
         assert action.text == "How can I help?"
         assert action.next_state is None
-        assert action.timeout_s == 10.0
+        assert action.timeout_s == 15.0
 
     def test_speak_with_transition(self):
         action = Action(
