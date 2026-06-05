@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,6 +20,8 @@ def mock_dm():
     dm.handle_event = AsyncMock(
         return_value=Action(type=ActionType.ASK, text="What can I help you with?")
     )
+    dm.context.call_start = time.monotonic()
+    dm.record_call_usage = AsyncMock()
     return dm
 
 
@@ -257,3 +260,37 @@ class TestSilenceTimer:
         assert len(text_frames) == 1
         assert text_frames[0].text == "Goodbye"
         assert len(end_frames) == 1
+
+
+class TestBudgetRecording:
+    @pytest.mark.asyncio
+    async def test_records_usage_on_end_call(self, adapter, mock_dm):
+        adapter._started = True
+        pushed_frames = []
+        adapter.push_frame = AsyncMock(side_effect=lambda f, d=None: pushed_frames.append(f))
+
+        mock_dm.handle_event.return_value = Action(
+            type=ActionType.END_CALL, text="Goodbye!"
+        )
+        mock_dm.record_call_usage = AsyncMock()
+
+        frame = make_transcription_frame("bye", finalized=True)
+        await adapter.process_frame(frame, MagicMock())
+
+        mock_dm.record_call_usage.assert_called_once()
+        duration = mock_dm.record_call_usage.call_args[0][0]
+        assert duration >= 0
+
+    @pytest.mark.asyncio
+    async def test_records_usage_on_error(self, adapter, mock_dm):
+        adapter._started = True
+        pushed_frames = []
+        adapter.push_frame = AsyncMock(side_effect=lambda f, d=None: pushed_frames.append(f))
+
+        mock_dm.handle_event.side_effect = RuntimeError("boom")
+        mock_dm.record_call_usage = AsyncMock()
+
+        frame = make_transcription_frame("hello", finalized=True)
+        await adapter.process_frame(frame, MagicMock())
+
+        mock_dm.record_call_usage.assert_called_once()

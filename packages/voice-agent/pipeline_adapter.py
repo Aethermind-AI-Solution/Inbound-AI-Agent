@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from pipecat.frames.frames import EndTaskFrame, TextFrame, TranscriptionFrame
@@ -39,6 +40,7 @@ class PipelineAdapter(FrameProcessor):
                 await self._push_action(action)
             except Exception:
                 logger.exception("Error in DialogueManager.start()")
+                await self._record_usage()
                 await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
                 return
 
@@ -58,7 +60,15 @@ class PipelineAdapter(FrameProcessor):
             await self._push_action(action)
         except Exception:
             logger.exception("Error in DialogueManager.handle_event()")
+            await self._record_usage()
             await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
+
+    async def _record_usage(self) -> None:
+        try:
+            elapsed = time.monotonic() - self._dm.context.call_start
+            await self._dm.record_call_usage(elapsed)
+        except Exception:
+            logger.exception("Error recording call usage")
 
     async def _push_action(self, action: Action) -> None:
         if action.type in (ActionType.ASK, ActionType.SPEAK):
@@ -73,6 +83,7 @@ class PipelineAdapter(FrameProcessor):
                 await self.push_frame(
                     TextFrame(text=action.text), FrameDirection.DOWNSTREAM
                 )
+            await self._record_usage()
             await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
 
     def _reset_silence_timer(self, timeout: float) -> None:
