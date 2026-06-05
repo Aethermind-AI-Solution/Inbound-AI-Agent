@@ -14,7 +14,7 @@ Living build plan. Work top-to-bottom; update status as you go. Full rationale i
 ## Step 3 — Date/time resolver ☑
 ## Step 4 — Dialogue state machine + tools + fallback ☑
 ## Step 5 — Voice pipeline integration ☑
-## Step 6 — Auth + guardrails ☐
+## Step 6 — Auth + guardrails ☑
 ## Step 7 — Regression harness ☐
 ## Step 8 — Salon go-live ☐
 
