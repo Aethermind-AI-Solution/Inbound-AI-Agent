@@ -96,6 +96,23 @@ async def main() -> None:
         nlu = StubNLUService()
         logger.info("Using StubNLU (set ANTHROPIC_API_KEY for Claude NLU)")
 
+    from packages.voice_agent.dialogue.budget.memory_tracker import InMemoryBudgetTracker
+    budget_tracker = InMemoryBudgetTracker()
+
+    redis_url = os.environ.get("REDIS_URL")
+    if redis_url:
+        try:
+            import redis.asyncio as aioredis
+            from packages.voice_agent.dialogue.budget.redis_tracker import RedisBudgetTracker
+            redis_client = aioredis.from_url(redis_url)
+            budget_tracker = RedisBudgetTracker(
+                redis=redis_client,
+                cost_per_minute_inr=config.guardrails.cost_per_minute_inr,
+            )
+            logger.info("Using Redis budget tracker")
+        except (ImportError, Exception):
+            logger.info("Using in-memory budget tracker (Redis unavailable)")
+
     dm = DialogueManager(
         config=config,
         data_adapter=data,
@@ -103,6 +120,7 @@ async def main() -> None:
         checkpoint_store=checkpoint,
         caller_phone="+919876543210",
         call_id="local-test-001",
+        budget_tracker=budget_tracker,
     )
     adapter = PipelineAdapter(dm)
 

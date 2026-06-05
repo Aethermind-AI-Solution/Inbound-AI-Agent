@@ -18,6 +18,14 @@ _REASON_MESSAGES = {
     "tool_error": (
         "I'm experiencing a technical issue. Let me have someone follow up with you."
     ),
+    "budget_exceeded": (
+        "We're experiencing high demand right now. "
+        "Let me take your number and have someone call you back."
+    ),
+    "auth_required": (
+        "I'll need to verify your identity for that request. "
+        "Let me have someone call you back to assist."
+    ),
 }
 
 _DEFAULT_MESSAGE = "I'm having some difficulty. Let me have someone call you back."
