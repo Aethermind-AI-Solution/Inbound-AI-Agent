@@ -76,14 +76,24 @@ async def main() -> None:
     from packages.voice_agent.data.mock_adapter import MockDataAdapter
     from packages.voice_agent.dialogue.checkpoint.memory import InMemoryCheckpointStore
     from packages.voice_agent.dialogue.manager import DialogueManager
-    from packages.voice_agent.dialogue.nlu.stub import StubNLUService
     from packages.voice_agent.pipeline_adapter import PipelineAdapter
     from packages.voice_agent.tests.test_states.conftest import make_tenant_config
 
     config = make_tenant_config()
     data = MockDataAdapter()
-    nlu = StubNLUService()
     checkpoint = InMemoryCheckpointStore()
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        from packages.voice_agent.dialogue.nlu.llm_client import AnthropicLLMClient
+        llm_client = AnthropicLLMClient(api_key=anthropic_key)
+        nlu = ClaudeNLUService(llm_client, config)
+        logger.info("Using Claude Haiku NLU")
+    else:
+        from packages.voice_agent.dialogue.nlu.stub import StubNLUService
+        nlu = StubNLUService()
+        logger.info("Using StubNLU (set ANTHROPIC_API_KEY for Claude NLU)")
 
     dm = DialogueManager(
         config=config,
