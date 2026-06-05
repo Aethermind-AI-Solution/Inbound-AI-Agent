@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from packages.voice_agent.data.adapter import BookingResult, CallerInfo, HoldResult
+from packages.voice_agent.dialogue.budget.memory_tracker import InMemoryBudgetTracker
 from packages.voice_agent.dialogue.checkpoint.memory import InMemoryCheckpointStore
 from packages.voice_agent.dialogue.manager import DialogueManager
 from packages.voice_agent.dialogue.models import (
@@ -183,3 +184,50 @@ class TestCheckpointResume:
         data = await manager.checkpoint_store.load("+919876543210")
         assert data is not None
         assert data["state"] == CallState.INTENT
+
+
+class TestBudgetGate:
+    @pytest.mark.asyncio
+    async def test_under_budget_proceeds_normally(self, config, data_adapter, resolver):
+        tracker = InMemoryBudgetTracker(cost_per_minute_inr=2.0)
+        nlu = StubNLUService()
+        checkpoint = InMemoryCheckpointStore()
+        m = DialogueManager(
+            config=config, data_adapter=data_adapter, nlu=nlu,
+            checkpoint_store=checkpoint, caller_phone="+919876543210",
+            call_id="call-001", budget_tracker=tracker,
+        )
+        m._make_date_resolver = MagicMock(return_value=resolver)
+        action = await m.start()
+        assert action.type == ActionType.ASK
+        assert m.current_state.name == CallState.INTENT
+
+    @pytest.mark.asyncio
+    async def test_over_budget_goes_to_callback(self, config, data_adapter, resolver):
+        tracker = InMemoryBudgetTracker(cost_per_minute_inr=2.0)
+        await tracker.record_usage("t1", 150000.0)  # 5000 INR
+        nlu = StubNLUService()
+        checkpoint = InMemoryCheckpointStore()
+        m = DialogueManager(
+            config=config, data_adapter=data_adapter, nlu=nlu,
+            checkpoint_store=checkpoint, caller_phone="+919876543210",
+            call_id="call-001", budget_tracker=tracker,
+        )
+        m._make_date_resolver = MagicMock(return_value=resolver)
+        action = await m.start()
+        assert m.current_state.name == CallState.CALLBACK_CAPTURE
+        assert m.context.fallback_reason == "budget_exceeded"
+
+    @pytest.mark.asyncio
+    async def test_record_call_usage(self, config, data_adapter, resolver):
+        tracker = InMemoryBudgetTracker(cost_per_minute_inr=2.0)
+        nlu = StubNLUService()
+        checkpoint = InMemoryCheckpointStore()
+        m = DialogueManager(
+            config=config, data_adapter=data_adapter, nlu=nlu,
+            checkpoint_store=checkpoint, caller_phone="+919876543210",
+            call_id="call-001", budget_tracker=tracker,
+        )
+        await m.record_call_usage(300.0)  # 5 min = 10 INR = 1000 paisa
+        assert await tracker.check_budget("t1", 9.0) is False
+        assert await tracker.check_budget("t1", 11.0) is True

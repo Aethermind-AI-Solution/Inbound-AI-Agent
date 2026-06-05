@@ -38,6 +38,7 @@ from packages.voice_agent.dialogue.states import (
 if TYPE_CHECKING:
     from packages.voice_agent.config.models import TenantConfig
     from packages.voice_agent.data.adapter import DataAdapter
+    from packages.voice_agent.dialogue.budget.base import BudgetTracker
     from packages.voice_agent.dialogue.checkpoint.base import CheckpointStore
     from packages.voice_agent.dialogue.nlu.base import NLUService
 
@@ -53,6 +54,7 @@ class DialogueManager:
         checkpoint_store: CheckpointStore,
         caller_phone: str,
         call_id: str,
+        budget_tracker: BudgetTracker | None = None,
     ) -> None:
         self.context = CallContext(
             tenant_config=config,
@@ -62,11 +64,20 @@ class DialogueManager:
         self.data_adapter = data_adapter
         self.nlu = nlu
         self.checkpoint_store = checkpoint_store
+        self.budget_tracker = budget_tracker
         self.states: dict[str, BaseState] = {}
         self.current_state: BaseState | None = None
 
     async def start(self) -> Action:
         self._register_states()
+        if self.budget_tracker and not self.context.budget_checked:
+            tenant_id = self.context.tenant_config.meta.tenant_id
+            budget = self.context.tenant_config.guardrails.monthly_budget_inr
+            within_budget = await self.budget_tracker.check_budget(tenant_id, budget)
+            self.context.budget_checked = True
+            if not within_budget:
+                self.context.fallback_reason = "budget_exceeded"
+                return await self._enter_state(CallState.CALLBACK_CAPTURE)
         return await self._enter_state(CallState.GREETING)
 
     async def resume(self, checkpoint: dict) -> Action:
@@ -99,6 +110,11 @@ class DialogueManager:
 
         action = await self._safe_handle(event)
         return await self._process_result(action)
+
+    async def record_call_usage(self, duration_seconds: float) -> None:
+        if self.budget_tracker:
+            tenant_id = self.context.tenant_config.meta.tenant_id
+            await self.budget_tracker.record_usage(tenant_id, duration_seconds)
 
     async def _enter_state(self, state_name: str) -> Action:
         while True:
@@ -183,6 +199,7 @@ class DialogueManager:
             "caller_id": self.context.caller.id if self.context.caller else None,
             "language": self.context.language,
             "call_id": self.context.call_id,
+            "budget_checked": self.context.budget_checked,
         }
         await self.checkpoint_store.save(
             self.context.caller_phone, data, ttl_seconds=900
@@ -232,3 +249,4 @@ class DialogueManager:
         self.context.language = checkpoint.get("language", "en-IN")
         slots_data = checkpoint.get("slots", {})
         self.context.slots = BookingSlots(**slots_data)
+        self.context.budget_checked = checkpoint.get("budget_checked", False)
