@@ -5,7 +5,12 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from pipecat.frames.frames import EndTaskFrame, TextFrame, TranscriptionFrame
+from pipecat.frames.frames import (
+    BotStoppedSpeakingFrame,
+    EndTaskFrame,
+    TTSSpeakFrame,
+    TranscriptionFrame,
+)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from packages.voice_agent.dialogue.models import (
@@ -29,6 +34,7 @@ class PipelineAdapter(FrameProcessor):
         self._dm = dialogue_manager
         self._started = False
         self._silence_task: asyncio.Task | None = None
+        self._pending_silence_timeout: float | None = None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -43,6 +49,13 @@ class PipelineAdapter(FrameProcessor):
                 await self._record_usage()
                 await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
                 return
+
+        if isinstance(frame, BotStoppedSpeakingFrame):
+            if self._pending_silence_timeout is not None:
+                self._reset_silence_timer(self._pending_silence_timeout)
+                self._pending_silence_timeout = None
+            await self.push_frame(frame, direction)
+            return
 
         if isinstance(frame, TranscriptionFrame):
             if not frame.finalized:
@@ -74,14 +87,15 @@ class PipelineAdapter(FrameProcessor):
         if action.type in (ActionType.ASK, ActionType.SPEAK):
             if action.text:
                 await self.push_frame(
-                    TextFrame(text=action.text), FrameDirection.DOWNSTREAM
+                    TTSSpeakFrame(text=action.text), FrameDirection.DOWNSTREAM
                 )
-            self._reset_silence_timer(action.timeout_s)
+            self._pending_silence_timeout = action.timeout_s
         elif action.type == ActionType.END_CALL:
             self._cancel_silence_timer()
+            self._pending_silence_timeout = None
             if action.text:
                 await self.push_frame(
-                    TextFrame(text=action.text), FrameDirection.DOWNSTREAM
+                    TTSSpeakFrame(text=action.text), FrameDirection.DOWNSTREAM
                 )
             await self._record_usage()
             await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)

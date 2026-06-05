@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pipecat.frames.frames import EndTaskFrame, TextFrame
+from pipecat.frames.frames import BotStoppedSpeakingFrame, EndTaskFrame, TTSSpeakFrame
 
 from packages.voice_agent.dialogue.models import Action, ActionType, CallEvent, EventType
 
@@ -115,7 +115,7 @@ class TestOutboundTranslation:
         await adapter.process_frame(frame, MagicMock())
 
         assert len(pushed_frames) == 2
-        assert isinstance(pushed_frames[0], TextFrame)
+        assert isinstance(pushed_frames[0], TTSSpeakFrame)
         assert pushed_frames[0].text == "Goodbye!"
         assert isinstance(pushed_frames[1], EndTaskFrame)
 
@@ -182,6 +182,26 @@ class TestSilenceTimer:
         assert event.type == EventType.SILENCE
 
     @pytest.mark.asyncio
+    async def test_silence_timer_deferred_until_bot_stops_speaking(self, adapter, mock_dm):
+        adapter._started = True
+        pushed_frames = []
+        adapter.push_frame = AsyncMock(side_effect=lambda f, d=None: pushed_frames.append(f))
+
+        mock_dm.handle_event.return_value = Action(
+            type=ActionType.ASK, text="Pick a service", timeout_s=0.05
+        )
+
+        frame = make_transcription_frame("hello", finalized=True)
+        await adapter.process_frame(frame, MagicMock())
+
+        assert adapter._pending_silence_timeout == 0.05
+        assert adapter._silence_task is None
+
+        await adapter.process_frame(BotStoppedSpeakingFrame(), MagicMock())
+        assert adapter._pending_silence_timeout is None
+        assert adapter._silence_task is not None
+
+    @pytest.mark.asyncio
     async def test_silence_timer_resets_on_transcription(self, adapter, mock_dm):
         adapter._started = True
         adapter.push_frame = AsyncMock()
@@ -230,6 +250,8 @@ class TestSilenceTimer:
         frame = make_transcription_frame("hello", finalized=True)
         await adapter.process_frame(frame, MagicMock())
 
+        await adapter.process_frame(BotStoppedSpeakingFrame(), MagicMock())
+
         mock_dm.handle_event.reset_mock()
         mock_dm.handle_event.return_value = Action(
             type=ActionType.ASK, text="Are you still there?"
@@ -255,10 +277,10 @@ class TestSilenceTimer:
         adapter._reset_silence_timer(0.05)
         await asyncio.sleep(0.1)
 
-        text_frames = [f for f in pushed_frames if isinstance(f, TextFrame)]
+        tts_frames = [f for f in pushed_frames if isinstance(f, TTSSpeakFrame)]
         end_frames = [f for f in pushed_frames if isinstance(f, EndTaskFrame)]
-        assert len(text_frames) == 1
-        assert text_frames[0].text == "Goodbye"
+        assert len(tts_frames) == 1
+        assert tts_frames[0].text == "Goodbye"
         assert len(end_frames) == 1
 
 
