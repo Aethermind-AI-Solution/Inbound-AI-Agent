@@ -142,3 +142,75 @@ class TestTemplateSafety:
         nlu = ClaudeNLUService(client, tenant_config)
         result = await nlu.classify_intent("costs $50 to book", [])
         assert result.intent == "new_booking"
+
+
+class TestIsAffirmative:
+    @pytest.mark.asyncio
+    async def test_keyword_affirmative(self, tenant_config):
+        client = MockLLMClient(response="should not be called")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        assert await nlu.is_affirmative("yes") is True
+        assert client.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_keyword_negative_returns_false(self, tenant_config):
+        client = MockLLMClient(response="should not be called")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        assert await nlu.is_affirmative("no") is False
+        assert client.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_llm_fallback_affirmative(self, tenant_config):
+        client = MockLLMClient(response="yes")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        assert await nlu.is_affirmative("I suppose so") is True
+        assert client.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_llm_error_returns_false(self, tenant_config):
+        client = MockLLMClient()
+        client.complete.side_effect = RuntimeError("timeout")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        assert await nlu.is_affirmative("I suppose so") is False
+
+
+class TestIsNegative:
+    @pytest.mark.asyncio
+    async def test_keyword_negative(self, tenant_config):
+        client = MockLLMClient(response="should not be called")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        assert await nlu.is_negative("no") is True
+        assert client.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_llm_fallback_negative(self, tenant_config):
+        client = MockLLMClient(response="no")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        assert await nlu.is_negative("not really") is True
+        assert client.call_count == 1
+
+
+class TestYesNoCaching:
+    @pytest.mark.asyncio
+    async def test_cache_prevents_double_llm_call(self, tenant_config):
+        client = MockLLMClient(response="yes")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        await nlu.is_affirmative("I think so")
+        await nlu.is_negative("I think so")
+        assert client.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_different_text_makes_new_llm_call(self, tenant_config):
+        client = MockLLMClient(response="yes")
+        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
+        nlu = ClaudeNLUService(client, tenant_config)
+        await nlu.is_affirmative("I think so")
+        await nlu.is_affirmative("maybe later")
+        assert client.call_count == 2
