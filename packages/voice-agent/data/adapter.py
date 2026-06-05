@@ -52,6 +52,7 @@ class CallerInfo:
     phone: str
     tenant_id: str
     verified_at: datetime | None
+    is_new: bool = False
 
 
 @dataclass

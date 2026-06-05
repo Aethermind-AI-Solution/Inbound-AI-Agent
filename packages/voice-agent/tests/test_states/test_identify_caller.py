@@ -8,7 +8,7 @@ from packages.voice_agent.dialogue.states.identify_caller import IdentifyCallerS
 class TestIdentifyCallerState:
     @pytest.mark.asyncio
     async def test_enter_resolves_caller_and_transitions(self, deps, context):
-        caller = CallerInfo(id="c1", phone="+919876543210", tenant_id="t1", verified_at=None)
+        caller = CallerInfo(id="c1", phone="+919876543210", tenant_id="t1", verified_at=None, is_new=False)
         deps.data_adapter.resolve_or_create_caller.return_value = caller
         state = IdentifyCallerState(deps)
         action = await state.enter(context)

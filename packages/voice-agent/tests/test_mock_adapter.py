@@ -84,3 +84,16 @@ class TestMockCancelBooking:
     def test_cancel_wrong_caller_returns_false(self):
         adapter = MockDataAdapter()
         assert adapter.cancel_booking("t1", "booking-1", "wrong-caller") is False
+
+
+class TestIsNewFlag:
+    def test_first_call_creates_new_caller(self):
+        adapter = MockDataAdapter()
+        caller = adapter.resolve_or_create_caller("t1", "+919999999999")
+        assert caller.is_new is True
+
+    def test_second_call_finds_existing_caller(self):
+        adapter = MockDataAdapter()
+        adapter.resolve_or_create_caller("t1", "+919999999999")
+        caller = adapter.resolve_or_create_caller("t1", "+919999999999")
+        assert caller.is_new is False

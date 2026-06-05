@@ -22,14 +22,28 @@ class MockDataAdapter:
             },
         }
         self._confirmed_holds: dict[str, str] = {}
+        self._callers: dict[str, CallerInfo] = {}
 
     def resolve_or_create_caller(self, tenant_id: str, phone: str) -> CallerInfo:
-        return CallerInfo(
-            id="caller-1",
+        key = f"{tenant_id}:{phone}"
+        if key in self._callers:
+            existing = self._callers[key]
+            return CallerInfo(
+                id=existing.id,
+                phone=existing.phone,
+                tenant_id=existing.tenant_id,
+                verified_at=existing.verified_at,
+                is_new=False,
+            )
+        caller = CallerInfo(
+            id=f"caller-{len(self._callers) + 1}",
             phone=phone,
             tenant_id=tenant_id,
             verified_at=None,
+            is_new=True,
         )
+        self._callers[key] = caller
+        return caller
 
     def check_availability(
         self,

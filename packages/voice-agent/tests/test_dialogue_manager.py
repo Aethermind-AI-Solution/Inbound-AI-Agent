@@ -37,7 +37,7 @@ def config():
 def data_adapter():
     adapter = MagicMock()
     adapter.resolve_or_create_caller.return_value = CallerInfo(
-        id="c1", phone="+919876543210", tenant_id="t1", verified_at=None
+        id="c1", phone="+919876543210", tenant_id="t1", verified_at=None, is_new=False
     )
     adapter.check_availability.return_value = [
         {"resource_id": "r1", "resource_name": "Priya", "blocked_slots": []},
