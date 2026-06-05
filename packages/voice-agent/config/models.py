@@ -355,6 +355,7 @@ class GuardrailsConfig(BaseModel):
     max_call_seconds: int = PydanticField(gt=0)
     max_turns: int = PydanticField(gt=0)
     monthly_budget_inr: float = PydanticField(gt=0)
+    cost_per_minute_inr: float = PydanticField(gt=0, default=2.0)
     scope: str
     recording_consent: bool
     retention_days: int = PydanticField(gt=0)

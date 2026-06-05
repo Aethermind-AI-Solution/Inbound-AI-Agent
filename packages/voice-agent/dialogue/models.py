@@ -104,6 +104,7 @@ class CallContext:
     silence_count: int = 0
     call_start: float = field(default_factory=time.monotonic)
     fallback_reason: str | None = None
+    budget_checked: bool = False
 
 
 @dataclass
