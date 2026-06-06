@@ -1,0 +1,44 @@
+name: max_turns_exceeded
+description: Guardrail fires when turn count exceeds max_turns
+setup:
+  guardrails_max_turns: 2
+turns:
+  - user: "book"
+    expect_state: collect_service
+  - user: "hmm"
+    expect_state: collect_service
+  - user: "uh"
+    expect_state: callback_capture
+    expect_fallback_reason: max_turns_exceeded
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: max_turns_exceeded
+---
+name: repeated_silence
+description: Two consecutive silence events trigger callback
+turns:
+  - user: "__SILENCE__"
+    expect_state: intent
+  - user: "__SILENCE__"
+    expect_state: callback_capture
+    expect_fallback_reason: repeated_silence
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: repeated_silence
+---
+name: unrecognized_intents
+description: Three gibberish inputs at intent trigger callback
+turns:
+  - user: "blah blah"
+    expect_state: intent
+  - user: "asdfg"
+    expect_state: intent
+  - user: "xyz123"
+    expect_state: callback_capture
+    expect_fallback_reason: repeated_failure
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: repeated_failure

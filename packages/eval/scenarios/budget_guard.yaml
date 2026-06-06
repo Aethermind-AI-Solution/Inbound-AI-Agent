@@ -1,0 +1,9 @@
+name: budget_exceeded
+description: Budget pre-loaded above limit skips greeting and goes to callback
+setup:
+  budget_used_inr: 6000
+turns:
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: budget_exceeded

@@ -1,0 +1,29 @@
+name: auth_blocks_new_caller
+description: New caller blocked from cancelling with soft auth after 2 attempts
+setup:
+  action_policy:
+    cancel: "soft"
+turns:
+  - user: "cancel my appointment"
+    expect_state: intent
+  - user: "cancel my appointment"
+    expect_state: callback_capture
+    expect_fallback_reason: auth_required
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: auth_required
+---
+name: auth_allows_existing_caller
+description: Returning caller with soft auth can cancel
+setup:
+  caller_is_returning: true
+  action_policy:
+    cancel: "soft"
+turns:
+  - user: "cancel my appointment"
+    expect_state: confirm_cancel
+    expect_intent: cancel
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call

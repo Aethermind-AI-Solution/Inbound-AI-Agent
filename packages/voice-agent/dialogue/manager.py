@@ -168,7 +168,8 @@ class DialogueManager:
         elapsed = time.monotonic() - self.context.call_start
 
         if self.current_state and self.current_state.name in (
-            CallState.READ_BACK, CallState.CONFIRM, CallState.CLOSE
+            CallState.READ_BACK, CallState.CONFIRM, CallState.CLOSE,
+            CallState.CALLBACK_CAPTURE,
         ):
             return None
 
