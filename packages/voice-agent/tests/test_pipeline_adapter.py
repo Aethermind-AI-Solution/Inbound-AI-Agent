@@ -75,13 +75,16 @@ class TestInboundTranslation:
         assert event.text == "I want to book an appointment"
 
     @pytest.mark.asyncio
-    async def test_non_finalized_transcription_ignored(self, adapter, mock_dm):
+    async def test_non_finalized_transcription_still_processed(self, adapter, mock_dm):
         adapter._started = True
         frame = make_transcription_frame("I want to", finalized=False)
 
         await adapter.process_frame(frame, MagicMock())
 
-        mock_dm.handle_event.assert_not_called()
+        mock_dm.handle_event.assert_called_once()
+        event = mock_dm.handle_event.call_args[0][0]
+        assert event.type == EventType.TRANSCRIPTION
+        assert event.text == "I want to"
 
 
 class TestOutboundTranslation:

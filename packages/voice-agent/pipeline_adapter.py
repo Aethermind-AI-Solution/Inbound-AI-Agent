@@ -58,8 +58,6 @@ class PipelineAdapter(FrameProcessor):
             return
 
         if isinstance(frame, TranscriptionFrame):
-            if not frame.finalized:
-                return
             await self._handle_transcription(frame)
             return
 

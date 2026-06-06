@@ -117,23 +117,37 @@ class DialogueManager:
             await self.budget_tracker.record_usage(tenant_id, duration_seconds)
 
     async def _enter_state(self, state_name: str) -> Action:
+        accumulated_text: list[str] = []
         while True:
             self.current_state = self.states[state_name]
             await self._write_checkpoint()
 
             guardrail_result = self._check_guardrails()
             if guardrail_result is not None:
+                if accumulated_text and guardrail_result.text:
+                    guardrail_result.text = " ".join(accumulated_text) + " " + guardrail_result.text
                 return guardrail_result
 
             action = await self._safe_enter()
 
             if action.type == ActionType.END_CALL:
+                if accumulated_text and action.text:
+                    action.text = " ".join(accumulated_text) + " " + action.text
                 return action
             if action.type == ActionType.ASK:
+                if accumulated_text and action.text:
+                    action.text = " ".join(accumulated_text) + " " + action.text
                 return action
+            if action.type == ActionType.SPEAK and action.next_state is not None:
+                if action.text:
+                    accumulated_text.append(action.text)
+                state_name = action.next_state
+                continue
             if action.next_state is not None:
                 state_name = action.next_state
                 continue
+            if accumulated_text and action.text:
+                action.text = " ".join(accumulated_text) + " " + action.text
             return action
 
     async def _process_result(self, action: Action) -> Action:
