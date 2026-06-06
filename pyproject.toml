@@ -18,5 +18,5 @@ target-version = ["py311"]
 line-length = 100
 
 [tool.pytest.ini_options]
-testpaths = ["packages/voice-agent/tests"]
+testpaths = ["packages/voice-agent/tests", "packages/eval"]
 asyncio_mode = "auto"

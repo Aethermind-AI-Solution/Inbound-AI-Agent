@@ -1,0 +1,19 @@
+name: happy_path_booking
+description: Caller books a haircut with Priya on Tuesday at 10am
+turns:
+  - user: "I want to book an appointment"
+    expect_state: collect_service
+    expect_intent: new_booking
+  - user: "haircut"
+    expect_state: collect_datetime
+    expect_slot_service: Haircut
+  - user: "tomorrow at 10am"
+    expect_state: offer_slots
+  - user: "Priya"
+    expect_state: read_back
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: null
+expect_min_turns: 5
+expect_max_turns: 5
