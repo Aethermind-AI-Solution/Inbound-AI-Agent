@@ -16,7 +16,7 @@ Living build plan. Work top-to-bottom; update status as you go. Full rationale i
 ## Step 5 — Voice pipeline integration ☑
 ## Step 6 — Auth + guardrails ☑
 ## Step 7 — Regression harness ☑
-## Step 8 — Salon go-live ☐
+## Step 8 — Salon go-live ◐
 
 ## Parallelism
 Step 0 ∥ Step 1. Steps 2 ∥ 3 after 1. 4 needs 2+3. 6 overlays 4. 7 seeds early. 8 needs 1–7.
