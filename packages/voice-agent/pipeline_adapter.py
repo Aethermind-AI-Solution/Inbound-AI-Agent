@@ -6,10 +6,12 @@ import time
 from typing import TYPE_CHECKING
 
 from pipecat.frames.frames import (
+    BotSpeakingFrame,
     BotStoppedSpeakingFrame,
     EndTaskFrame,
     TTSSpeakFrame,
     TranscriptionFrame,
+    VADUserStartedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
@@ -35,6 +37,7 @@ class PipelineAdapter(FrameProcessor):
         self._started = False
         self._silence_task: asyncio.Task | None = None
         self._pending_silence_timeout: float | None = None
+        self._bot_speaking = False
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -50,10 +53,23 @@ class PipelineAdapter(FrameProcessor):
                 await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
                 return
 
+        if isinstance(frame, BotSpeakingFrame):
+            self._bot_speaking = True
+            await self.push_frame(frame, direction)
+            return
+
         if isinstance(frame, BotStoppedSpeakingFrame):
+            self._bot_speaking = False
             if self._pending_silence_timeout is not None:
                 self._reset_silence_timer(self._pending_silence_timeout)
                 self._pending_silence_timeout = None
+            await self.push_frame(frame, direction)
+            return
+
+        if isinstance(frame, VADUserStartedSpeakingFrame):
+            if self._bot_speaking:
+                logger.info("Barge-in detected — interrupting bot speech")
+                await self.broadcast_interruption()
             await self.push_frame(frame, direction)
             return
 

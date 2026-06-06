@@ -144,9 +144,12 @@ async def _run_pipeline(
     caller_phone: str,
 ) -> None:
     """Create and run the pipecat pipeline for a single call."""
+    from pipecat.audio.vad.silero import SileroVADAnalyzer
+    from pipecat.audio.vad.vad_analyzer import VADParams
     from pipecat.pipeline.pipeline import Pipeline
     from pipecat.pipeline.runner import PipelineRunner
     from pipecat.pipeline.task import PipelineParams, PipelineTask
+    from pipecat.processors.audio.vad_processor import VADProcessor
     from pipecat.serializers.twilio import TwilioFrameSerializer
     from pipecat.services.deepgram.stt import DeepgramSTTService
     from pipecat.services.deepgram.tts import DeepgramTTSService
@@ -212,10 +215,21 @@ async def _run_pipeline(
         call_id=call_sid,
         budget_tracker=budget_tracker,
     )
+    vad = VADProcessor(
+        vad_analyzer=SileroVADAnalyzer(
+            params=VADParams(
+                confidence=0.6,
+                start_secs=0.2,
+                stop_secs=0.3,
+            ),
+        ),
+    )
+
     adapter = PipelineAdapter(dm)
 
     pipeline = Pipeline([
         transport.input(),
+        vad,
         stt,
         adapter,
         tts,
