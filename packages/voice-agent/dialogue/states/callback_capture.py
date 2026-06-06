@@ -31,6 +31,12 @@ _REASON_MESSAGES = {
 _DEFAULT_MESSAGE = "I'm having some difficulty. Let me have someone call you back."
 
 
+def _format_phone_for_speech(phone: str) -> str:
+    """Format a phone number so TTS reads it digit-by-digit."""
+    digits = "".join(c for c in phone if c.isdigit())
+    return " ".join(digits)
+
+
 class CallbackCaptureState(BaseState):
     name = CallState.CALLBACK_CAPTURE
 
@@ -41,9 +47,10 @@ class CallbackCaptureState(BaseState):
     async def enter(self, context: CallContext) -> Action:
         self._unclear_count = 0
         reason_msg = _REASON_MESSAGES.get(context.fallback_reason, _DEFAULT_MESSAGE)
+        spoken_phone = _format_phone_for_speech(context.caller_phone)
         return Action(
             type=ActionType.ASK,
-            text=f"{reason_msg} Can I confirm your callback number is {context.caller_phone}?",
+            text=f"{reason_msg} Can I confirm your callback number is {spoken_phone}?",
         )
 
     async def handle(self, event: CallEvent, context: CallContext) -> Action:
@@ -57,9 +64,10 @@ class CallbackCaptureState(BaseState):
 
         self._unclear_count += 1
         if self._unclear_count >= 2:
+            spoken_phone = _format_phone_for_speech(context.caller_phone)
             return Action(
                 type=ActionType.SPEAK,
-                text=f"I'll use {context.caller_phone} for the callback. We'll be in touch shortly.",
+                text=f"I'll use {spoken_phone} for the callback. We'll be in touch shortly.",
                 next_state=CallState.CLOSE,
             )
 

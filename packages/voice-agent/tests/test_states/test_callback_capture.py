@@ -11,7 +11,7 @@ class TestCallbackCaptureState:
         state = CallbackCaptureState(deps)
         action = await state.enter(context)
         assert action.type == ActionType.ASK
-        assert "+919876543210" in action.text
+        assert "9 1 9 8 7 6 5 4 3 2 1 0" in action.text
 
     @pytest.mark.asyncio
     async def test_enter_with_no_availability_reason(self, deps, context):
