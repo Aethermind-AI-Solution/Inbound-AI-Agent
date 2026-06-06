@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from pipecat.frames.frames import (
     BotSpeakingFrame,
+    BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
     EndTaskFrame,
     TTSSpeakFrame,
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+BARGE_IN_COOLDOWN = 1.5
+
 
 class PipelineAdapter(FrameProcessor):
     def __init__(self, dialogue_manager: DialogueManager, **kwargs) -> None:
@@ -38,6 +41,7 @@ class PipelineAdapter(FrameProcessor):
         self._silence_task: asyncio.Task | None = None
         self._pending_silence_timeout: float | None = None
         self._bot_speaking = False
+        self._last_interruption_time: float = 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -53,7 +57,7 @@ class PipelineAdapter(FrameProcessor):
                 await self.push_frame(EndTaskFrame(), FrameDirection.DOWNSTREAM)
                 return
 
-        if isinstance(frame, BotSpeakingFrame):
+        if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_speaking = True
             await self.push_frame(frame, direction)
             return
@@ -69,18 +73,35 @@ class PipelineAdapter(FrameProcessor):
         if isinstance(frame, VADUserStartedSpeakingFrame):
             if self._bot_speaking:
                 logger.info("Barge-in detected — interrupting bot speech")
+                self._last_interruption_time = time.monotonic()
                 await self.broadcast_interruption()
             await self.push_frame(frame, direction)
             return
 
         if isinstance(frame, TranscriptionFrame):
+            if self._should_drop_transcription(frame):
+                return
             await self._handle_transcription(frame)
             return
 
         await self.push_frame(frame, direction)
 
+    def _should_drop_transcription(self, frame: TranscriptionFrame) -> bool:
+        if self._bot_speaking:
+            logger.debug("Dropping transcription while bot is speaking: %r", frame.text)
+            return True
+        since_interruption = time.monotonic() - self._last_interruption_time
+        if since_interruption < BARGE_IN_COOLDOWN:
+            logger.debug(
+                "Dropping stale transcription %.1fs after barge-in: %r",
+                since_interruption, frame.text,
+            )
+            return True
+        return False
+
     async def _handle_transcription(self, frame: TranscriptionFrame) -> None:
         self._cancel_silence_timer()
+        logger.info("User said: %r", frame.text)
         event = CallEvent(type=EventType.TRANSCRIPTION, text=frame.text)
         try:
             action = await self._dm.handle_event(event)
@@ -100,6 +121,7 @@ class PipelineAdapter(FrameProcessor):
     async def _push_action(self, action: Action) -> None:
         if action.type in (ActionType.ASK, ActionType.SPEAK):
             if action.text:
+                logger.info("Bot says: %r", action.text)
                 await self.push_frame(
                     TTSSpeakFrame(text=action.text), FrameDirection.DOWNSTREAM
                 )
@@ -108,6 +130,7 @@ class PipelineAdapter(FrameProcessor):
             self._cancel_silence_timer()
             self._pending_silence_timeout = None
             if action.text:
+                logger.info("Bot says (closing): %r", action.text)
                 await self.push_frame(
                     TTSSpeakFrame(text=action.text), FrameDirection.DOWNSTREAM
                 )

@@ -37,7 +37,7 @@ class CollectDatetimeState(BaseState):
             return Action(type=ActionType.TRANSITION, next_state=CallState.OFFER_SLOTS)
 
         self._reprompt_count += 1
-        if self._reprompt_count >= 3:
+        if self._reprompt_count >= 4:
             context.fallback_reason = "repeated_failure"
             return Action(type=ActionType.TRANSITION, next_state=CallState.CALLBACK_CAPTURE)
 

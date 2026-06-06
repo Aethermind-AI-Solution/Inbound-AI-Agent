@@ -78,7 +78,7 @@ class TestCollectDatetimeState:
         assert "past" in action.text.lower()
 
     @pytest.mark.asyncio
-    async def test_three_failures_goes_to_callback(
+    async def test_four_failures_goes_to_callback(
         self, deps_with_resolver, context, resolver
     ):
         resolver.resolve.return_value = ResolutionResult(
@@ -88,5 +88,6 @@ class TestCollectDatetimeState:
         await state.enter(context)
         await state.handle(make_transcription("fail1"), context)
         await state.handle(make_transcription("fail2"), context)
-        action = await state.handle(make_transcription("fail3"), context)
+        await state.handle(make_transcription("fail3"), context)
+        action = await state.handle(make_transcription("fail4"), context)
         assert action.next_state == CallState.CALLBACK_CAPTURE
