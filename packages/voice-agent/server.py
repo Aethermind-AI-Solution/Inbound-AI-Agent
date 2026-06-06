@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
 
 import uvicorn
@@ -39,13 +41,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger("server")
 
-app = FastAPI(title="Voice Booking Agent")
-
 TUNNEL_URL = os.environ.get("TUNNEL_URL", "")
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    if not DEEPGRAM_API_KEY:
+        logger.error("DEEPGRAM_API_KEY not set")
+        sys.exit(1)
+    if not TUNNEL_URL:
+        logger.warning("TUNNEL_URL not set — /incoming-call will return error TwiML")
+    yield
+
+
+app = FastAPI(title="Voice Booking Agent", lifespan=lifespan)
 
 TWIML_ERROR = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -73,7 +86,7 @@ async def incoming_call(From: str = Form("unknown"), CallSid: str = Form("unknow
 <Response>
   <Connect>
     <Stream url="wss://{TUNNEL_URL}/ws">
-      <Parameter name="caller_phone" value="{From}"/>
+      <Parameter name="caller_phone" value="{escape(From, quote=True)}"/>
     </Stream>
   </Connect>
   <Pause length="40"/>
@@ -83,12 +96,6 @@ async def incoming_call(From: str = Form("unknown"), CallSid: str = Form("unknow
 
 
 if __name__ == "__main__":
-    if not DEEPGRAM_API_KEY:
-        logger.error("DEEPGRAM_API_KEY not set")
-        sys.exit(1)
-    if not TUNNEL_URL:
-        logger.warning("TUNNEL_URL not set — TwiML responses will fail")
-
     logger.info("")
     logger.info("=" * 55)
     logger.info("  VOICE BOOKING AGENT — Twilio server")
