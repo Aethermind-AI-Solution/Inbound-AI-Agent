@@ -1,0 +1,39 @@
+name: cancel_happy_path
+description: Returning caller cancels their existing booking
+setup:
+  caller_is_returning: true
+turns:
+  - user: "cancel my appointment"
+    expect_state: confirm_cancel
+    expect_intent: cancel
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_min_turns: 2
+expect_max_turns: 2
+---
+name: cancel_no_bookings
+description: Caller tries to cancel but has no bookings
+setup:
+  force_no_bookings: true
+turns:
+  - user: "cancel my booking"
+    expect_state: close
+    expect_action: end_call
+    expect_intent: cancel
+expect_min_turns: 1
+expect_max_turns: 1
+---
+name: status_check
+description: Returning caller checks booking status then exits
+setup:
+  caller_is_returning: true
+turns:
+  - user: "check my booking"
+    expect_state: read_status
+    expect_intent: status
+  - user: "no"
+    expect_state: close
+    expect_action: end_call
+expect_min_turns: 2
+expect_max_turns: 2
