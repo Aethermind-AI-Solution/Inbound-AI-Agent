@@ -181,8 +181,6 @@ async def _run_pipeline(
 
     stt = DeepgramSTTService(
         api_key=DEEPGRAM_API_KEY,
-        encoding="mulaw",
-        sample_rate=8000,
         settings=DeepgramSTTService.Settings(
             language="en",
             model="nova-2-phonecall",
@@ -195,8 +193,6 @@ async def _run_pipeline(
 
     tts = DeepgramTTSService(
         api_key=DEEPGRAM_API_KEY,
-        encoding="mulaw",
-        sample_rate=8000,
         settings=DeepgramTTSService.Settings(voice="aura-asteria-en"),
     )
 
