@@ -255,3 +255,139 @@ class TestLoadScenarios:
 
         scenarios = load_scenarios(scenario_dir)
         assert len(scenarios) == 1
+
+
+from packages.eval.runner import ScenarioError, run_scenario
+
+
+class TestRunScenario:
+    @pytest.mark.asyncio
+    async def test_happy_path_minimal(self):
+        """Minimal 1-turn scenario: intent detection."""
+        scenario = Scenario(
+            name="test_minimal",
+            turns=[
+                Turn(
+                    user="I want to book an appointment",
+                    expect_state="collect_service",
+                    expect_intent="new_booking",
+                ),
+            ],
+        )
+        await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_silence_sentinel(self):
+        """__SILENCE__ sends a SILENCE event, not a transcription."""
+        scenario = Scenario(
+            name="test_silence",
+            turns=[
+                Turn(user="__SILENCE__", expect_state="intent"),
+            ],
+        )
+        await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_wrong_state_raises_scenario_error(self):
+        scenario = Scenario(
+            name="test_wrong_state",
+            turns=[
+                Turn(
+                    user="I want to book",
+                    expect_state="close",  # wrong — should be collect_service
+                ),
+            ],
+        )
+        with pytest.raises(ScenarioError, match="test_wrong_state"):
+            await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_wrong_intent_raises_scenario_error(self):
+        scenario = Scenario(
+            name="test_wrong_intent",
+            turns=[
+                Turn(
+                    user="I want to book",
+                    expect_state="collect_service",
+                    expect_intent="cancel",  # wrong
+                ),
+            ],
+        )
+        with pytest.raises(ScenarioError, match="intent"):
+            await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_end_of_scenario_fallback_reason(self):
+        """3 gibberish turns → callback → confirm callback → close."""
+        scenario = Scenario(
+            name="test_fallback_check",
+            turns=[
+                Turn(user="xyzzy", expect_state="intent"),
+                Turn(user="qwerty", expect_state="intent"),
+                Turn(user="asdfgh", expect_state="callback_capture"),
+                Turn(user="yes", expect_state="close"),
+            ],
+            expect_fallback_reason="repeated_failure",
+        )
+        await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_wrong_end_fallback_raises(self):
+        scenario = Scenario(
+            name="test_wrong_fallback",
+            turns=[
+                Turn(user="xyzzy", expect_state="intent"),
+                Turn(user="qwerty", expect_state="intent"),
+                Turn(user="asdfgh", expect_state="callback_capture"),
+                Turn(user="yes", expect_state="close"),
+            ],
+            expect_fallback_reason="budget_exceeded",  # wrong
+        )
+        with pytest.raises(ScenarioError, match="fallback_reason"):
+            await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_turn_count_bounds(self):
+        scenario = Scenario(
+            name="test_turn_count",
+            turns=[
+                Turn(user="xyzzy", expect_state="intent"),
+                Turn(user="qwerty", expect_state="intent"),
+                Turn(user="asdfgh", expect_state="callback_capture"),
+                Turn(user="yes", expect_state="close"),
+            ],
+            expect_min_turns=4,
+            expect_max_turns=4,
+        )
+        await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_setup_budget_exceeded(self):
+        scenario = Scenario(
+            name="test_budget",
+            setup=ScenarioSetup(budget_used_inr=6000.0),
+            turns=[
+                Turn(user="yes", expect_state="close"),
+            ],
+            expect_fallback_reason="budget_exceeded",
+        )
+        await run_scenario(scenario)
+
+    @pytest.mark.asyncio
+    async def test_setup_caller_is_returning(self):
+        """Returning caller can cancel (with soft auth on cancel)."""
+        scenario = Scenario(
+            name="test_returning",
+            setup=ScenarioSetup(
+                caller_is_returning=True,
+                action_policy={"cancel": "soft"},
+            ),
+            turns=[
+                Turn(
+                    user="cancel my appointment",
+                    expect_state="confirm_cancel",
+                    expect_intent="cancel",
+                ),
+            ],
+        )
+        await run_scenario(scenario)

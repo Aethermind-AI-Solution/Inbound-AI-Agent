@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, time
 from pathlib import Path
 
 import yaml
 
-from packages.voice_agent.dialogue.models import ActionType, CallState
+from packages.voice_agent.config.models import CustomField
+from packages.voice_agent.data.mock_adapter import MockDataAdapter
+from packages.voice_agent.dialogue.budget.memory_tracker import InMemoryBudgetTracker
+from packages.voice_agent.dialogue.checkpoint.memory import InMemoryCheckpointStore
+from packages.voice_agent.dialogue.manager import DialogueManager
+from packages.voice_agent.dialogue.models import ActionType, CallEvent, CallState, EventType
+from packages.voice_agent.dialogue.nlu.stub import StubNLUService
+from packages.voice_agent.resolver.date_resolver import DateResolver
+from packages.voice_agent.tests.test_states.conftest import make_tenant_config
 
 
 @dataclass
@@ -133,3 +142,165 @@ def _parse_scenario(doc: dict, filename: str) -> Scenario:
         expect_min_turns=doc.get("expect_min_turns"),
         expect_max_turns=doc.get("expect_max_turns"),
     )
+
+
+class ScenarioError(AssertionError):
+    pass
+
+
+def _fixed_date_resolver(config):
+    bm = config.booking_model
+    return DateResolver(
+        business_hours=bm.business_hours,
+        booking_window_days=bm.booking_window_days,
+        min_notice_min=bm.min_notice_min,
+        reference_date=date(2026, 6, 1),  # Monday
+        reference_time=time(9, 0),
+    )
+
+
+async def run_scenario(scenario: Scenario) -> None:
+    config = make_tenant_config()
+    data = MockDataAdapter()
+    checkpoint = InMemoryCheckpointStore()
+    budget = InMemoryBudgetTracker()
+
+    # --- Apply setup overrides ---
+    setup = scenario.setup
+
+    if setup.action_policy is not None:
+        config.auth.action_policy = setup.action_policy
+
+    if setup.force_no_bookings:
+        data._bookings = {}
+
+    if setup.force_no_availability:
+        data.check_availability = lambda *a, **kw: []
+
+    if setup.guardrails_max_turns is not None:
+        config.guardrails.max_turns = setup.guardrails_max_turns
+
+    if setup.add_custom_fields:
+        svc = config.booking_model.services[0]
+        svc.custom_fields = [
+            CustomField(**cf) for cf in setup.add_custom_fields
+        ]
+
+    if setup.budget_used_inr > 0:
+        tenant_id = config.meta.tenant_id
+        cost_per_min = config.guardrails.cost_per_minute_inr
+        fake_seconds = (setup.budget_used_inr / cost_per_min) * 60
+        await budget.record_usage(tenant_id, fake_seconds)
+
+    if setup.caller_is_returning:
+        data.resolve_or_create_caller(
+            config.meta.tenant_id, scenario.caller_phone
+        )
+
+    # --- Select NLU ---
+    nlu = StubNLUService()
+
+    # --- Create DialogueManager ---
+    dm = DialogueManager(
+        config=config,
+        data_adapter=data,
+        nlu=nlu,
+        checkpoint_store=checkpoint,
+        caller_phone=scenario.caller_phone,
+        call_id=f"eval-{scenario.name}",
+        budget_tracker=budget,
+    )
+    dm._make_date_resolver = _fixed_date_resolver
+
+    # --- Run ---
+    await dm.start()
+
+    for i, turn in enumerate(scenario.turns):
+        turn_label = f"Scenario '{scenario.name}' turn {i + 1}"
+
+        if turn.user == "__SILENCE__":
+            event = CallEvent(type=EventType.SILENCE)
+        else:
+            event = CallEvent(type=EventType.TRANSCRIPTION, text=turn.user)
+
+        action = await dm.handle_event(event)
+
+        actual_state = dm.current_state.name
+        if actual_state != turn.expect_state:
+            raise ScenarioError(
+                f"{turn_label}:\n"
+                f"  User said: \"{turn.user}\"\n"
+                f"  Expected state: {turn.expect_state}\n"
+                f"  Actual state:   {actual_state}"
+            )
+
+        if turn.expect_action is not None and action.type != turn.expect_action:
+            raise ScenarioError(
+                f"{turn_label}:\n"
+                f"  User said: \"{turn.user}\"\n"
+                f"  Expected action: {turn.expect_action}\n"
+                f"  Actual action:   {action.type}"
+            )
+
+        if turn.expect_intent is not None and dm.context.intent != turn.expect_intent:
+            raise ScenarioError(
+                f"{turn_label}:\n"
+                f"  User said: \"{turn.user}\"\n"
+                f"  Expected intent: {turn.expect_intent}\n"
+                f"  Actual intent:   {dm.context.intent}"
+            )
+
+        if turn.expect_slot_service is not None:
+            actual_svc = dm.context.slots.service_name
+            if actual_svc != turn.expect_slot_service:
+                raise ScenarioError(
+                    f"{turn_label}:\n"
+                    f"  User said: \"{turn.user}\"\n"
+                    f"  Expected service: {turn.expect_slot_service}\n"
+                    f"  Actual service:   {actual_svc}"
+                )
+
+        if turn.expect_text_contains is not None:
+            if action.text is None or turn.expect_text_contains not in action.text:
+                raise ScenarioError(
+                    f"{turn_label}:\n"
+                    f"  User said: \"{turn.user}\"\n"
+                    f"  Expected text containing: \"{turn.expect_text_contains}\"\n"
+                    f"  Actual text: \"{action.text}\""
+                )
+
+        if turn.expect_fallback_reason is not None:
+            actual_reason = dm.context.fallback_reason
+            if actual_reason != turn.expect_fallback_reason:
+                raise ScenarioError(
+                    f"{turn_label}:\n"
+                    f"  User said: \"{turn.user}\"\n"
+                    f"  Expected fallback_reason: {turn.expect_fallback_reason}\n"
+                    f"  Actual fallback_reason:   {actual_reason}"
+                )
+
+    # --- End-of-scenario assertions ---
+    if scenario.expect_fallback_reason is not None:
+        actual = dm.context.fallback_reason
+        if actual != scenario.expect_fallback_reason:
+            raise ScenarioError(
+                f"Scenario '{scenario.name}' end:\n"
+                f"  Expected fallback_reason: {scenario.expect_fallback_reason}\n"
+                f"  Actual fallback_reason:   {actual}"
+            )
+
+    if scenario.expect_min_turns is not None:
+        if dm.context.turn_count < scenario.expect_min_turns:
+            raise ScenarioError(
+                f"Scenario '{scenario.name}' end:\n"
+                f"  Expected min turns: {scenario.expect_min_turns}\n"
+                f"  Actual turn count:  {dm.context.turn_count}"
+            )
+
+    if scenario.expect_max_turns is not None:
+        if dm.context.turn_count > scenario.expect_max_turns:
+            raise ScenarioError(
+                f"Scenario '{scenario.name}' end:\n"
+                f"  Expected max turns: {scenario.expect_max_turns}\n"
+                f"  Actual turn count:  {dm.context.turn_count}"
+            )
