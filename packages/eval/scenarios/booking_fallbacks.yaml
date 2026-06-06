@@ -1,0 +1,34 @@
+name: booking_unknown_service
+description: Two unrecognized services trigger callback
+turns:
+  - user: "book an appointment"
+    expect_state: collect_service
+    expect_intent: new_booking
+  - user: "massage"
+    expect_state: collect_service
+  - user: "facial"
+    expect_state: callback_capture
+    expect_fallback_reason: repeated_failure
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: repeated_failure
+---
+name: booking_no_availability
+description: No available slots at requested time triggers callback
+setup:
+  force_no_availability: true
+turns:
+  - user: "book an appointment"
+    expect_state: collect_service
+    expect_intent: new_booking
+  - user: "haircut"
+    expect_state: collect_datetime
+    expect_slot_service: Haircut
+  - user: "tomorrow at 10am"
+    expect_state: callback_capture
+    expect_fallback_reason: no_availability
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_fallback_reason: no_availability

@@ -17,3 +17,57 @@ turns:
 expect_fallback_reason: null
 expect_min_turns: 5
 expect_max_turns: 5
+---
+name: booking_with_custom_fields
+description: Booking flow visits collect_custom state when service has custom fields
+setup:
+  add_custom_fields:
+    - key: "notes"
+      type: "str"
+      required: true
+      prompt: "Any special requests for your haircut?"
+turns:
+  - user: "book an appointment"
+    expect_state: collect_service
+    expect_intent: new_booking
+  - user: "haircut"
+    expect_state: collect_datetime
+    expect_slot_service: Haircut
+  - user: "tomorrow at 10am"
+    expect_state: offer_slots
+  - user: "Priya"
+    expect_state: collect_custom
+  - user: "just a trim please"
+    expect_state: read_back
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_min_turns: 6
+expect_max_turns: 6
+---
+name: booking_edit_at_readback
+description: Caller says no at readback, changes datetime, then confirms
+turns:
+  - user: "book an appointment"
+    expect_state: collect_service
+    expect_intent: new_booking
+  - user: "haircut"
+    expect_state: collect_datetime
+    expect_slot_service: Haircut
+  - user: "tomorrow at 10am"
+    expect_state: offer_slots
+  - user: "Priya"
+    expect_state: read_back
+  - user: "no"
+    expect_state: read_back
+  - user: "time"
+    expect_state: collect_datetime
+  - user: "tomorrow at 2pm"
+    expect_state: offer_slots
+  - user: "Priya"
+    expect_state: read_back
+  - user: "yes"
+    expect_state: close
+    expect_action: end_call
+expect_min_turns: 9
+expect_max_turns: 9
