@@ -185,8 +185,8 @@ async def _run_pipeline(
             language="en",
             model="nova-2-phonecall",
             interim_results=True,
-            endpointing=300,
-            utterance_end_ms=1000,
+            endpointing=500,
+            utterance_end_ms=1500,
             smart_format=True,
         ),
     )

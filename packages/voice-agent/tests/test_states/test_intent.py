@@ -56,9 +56,10 @@ class TestIntentState:
         assert action.next_state is None
 
     @pytest.mark.asyncio
-    async def test_unknown_three_times_goes_to_callback(self, deps, context):
+    async def test_unknown_four_times_goes_to_callback(self, deps, context):
         state = IntentState(deps)
         await state.enter(context)
+        await state.handle(make_transcription("blah"), context)
         await state.handle(make_transcription("blah"), context)
         await state.handle(make_transcription("blah"), context)
         action = await state.handle(make_transcription("blah"), context)

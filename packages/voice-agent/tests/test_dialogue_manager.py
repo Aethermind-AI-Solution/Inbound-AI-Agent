@@ -133,8 +133,9 @@ class TestCancelFlow:
 
 class TestFallbackFlow:
     @pytest.mark.asyncio
-    async def test_three_unknown_intents_go_to_callback(self, manager):
+    async def test_four_unknown_intents_go_to_callback(self, manager):
         await manager.start()
+        await manager.handle_event(make_event("blah"))
         await manager.handle_event(make_event("blah"))
         await manager.handle_event(make_event("blah"))
         action = await manager.handle_event(make_event("blah"))

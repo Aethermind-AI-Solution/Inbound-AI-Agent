@@ -46,15 +46,16 @@ class IntentState(BaseState):
             return Action(type=ActionType.TRANSITION, next_state=CallState.LOOKUP_BOOKINGS)
 
         self._reprompt_count += 1
-        if self._reprompt_count >= 3:
+        if self._reprompt_count >= 4:
             context.fallback_reason = "repeated_failure"
             return Action(type=ActionType.TRANSITION, next_state=CallState.CALLBACK_CAPTURE)
 
         return Action(
             type=ActionType.ASK,
             text=(
-                "I didn't quite catch that. Would you like to book a new appointment, "
-                "or check on an existing one?"
+                "No worries! I can help you book a new appointment, "
+                "check on an existing one, reschedule, or cancel. "
+                "Which would you like?"
             ),
         )
 
