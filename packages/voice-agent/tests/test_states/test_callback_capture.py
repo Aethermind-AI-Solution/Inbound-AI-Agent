@@ -35,6 +35,24 @@ class TestCallbackCaptureState:
         assert action.next_state == CallState.CLOSE
 
     @pytest.mark.asyncio
+    async def test_negative_asks_for_alternate_number(self, deps, context):
+        state = CallbackCaptureState(deps)
+        await state.enter(context)
+        action = await state.handle(make_transcription("no"), context)
+        assert action.type == ActionType.ASK
+        assert "number" in action.text.lower()
+        assert action.next_state is None
+
+    @pytest.mark.asyncio
+    async def test_negative_then_number_stores_and_closes(self, deps, context):
+        state = CallbackCaptureState(deps)
+        await state.enter(context)
+        await state.handle(make_transcription("no"), context)
+        action = await state.handle(make_transcription("9 8 7 6 5 4 3 2 1 0"), context)
+        assert action.next_state == CallState.CLOSE
+        assert context.callback_number == "9 8 7 6 5 4 3 2 1 0"
+
+    @pytest.mark.asyncio
     async def test_unclear_twice_assumes_correct_and_closes(self, deps, context):
         state = CallbackCaptureState(deps)
         await state.enter(context)

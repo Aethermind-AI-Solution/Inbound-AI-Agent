@@ -105,6 +105,7 @@ class CallContext:
     call_start: float = field(default_factory=time.monotonic)
     fallback_reason: str | None = None
     budget_checked: bool = False
+    callback_number: str | None = None
 
 
 @dataclass

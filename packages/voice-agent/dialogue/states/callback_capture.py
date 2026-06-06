@@ -43,9 +43,11 @@ class CallbackCaptureState(BaseState):
     def __init__(self, deps) -> None:
         super().__init__(deps)
         self._unclear_count = 0
+        self._awaiting_alternate = False
 
     async def enter(self, context: CallContext) -> Action:
         self._unclear_count = 0
+        self._awaiting_alternate = False
         reason_msg = _REASON_MESSAGES.get(context.fallback_reason, _DEFAULT_MESSAGE)
         spoken_phone = _format_phone_for_speech(context.caller_phone)
         return Action(
@@ -55,11 +57,27 @@ class CallbackCaptureState(BaseState):
 
     async def handle(self, event: CallEvent, context: CallContext) -> Action:
         text = event.text or ""
+
+        if self._awaiting_alternate:
+            context.callback_number = text
+            return Action(
+                type=ActionType.SPEAK,
+                text="Got it, we'll call you back at that number shortly.",
+                next_state=CallState.CLOSE,
+            )
+
         if await self.deps.nlu.is_affirmative(text):
             return Action(
                 type=ActionType.SPEAK,
                 text="Great, we'll call you back shortly.",
                 next_state=CallState.CLOSE,
+            )
+
+        if await self.deps.nlu.is_negative(text):
+            self._awaiting_alternate = True
+            return Action(
+                type=ActionType.ASK,
+                text="No problem. What number should we call you back on?",
             )
 
         self._unclear_count += 1
