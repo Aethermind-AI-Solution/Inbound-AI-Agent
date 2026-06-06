@@ -181,6 +181,21 @@ class TestLoadScenarios:
         with pytest.raises(ValueError, match="expect_state"):
             load_scenarios(scenario_dir)
 
+    def test_validates_invalid_action(self, tmp_path):
+        yaml_content = textwrap.dedent("""\
+            name: bad_action
+            turns:
+              - user: "hi"
+                expect_state: intent
+                expect_action: fly
+        """)
+        scenario_dir = tmp_path / "scenarios"
+        scenario_dir.mkdir()
+        (scenario_dir / "bad.yaml").write_text(yaml_content)
+
+        with pytest.raises(ValueError, match="expect_action"):
+            load_scenarios(scenario_dir)
+
     def test_validates_invalid_nlu(self, tmp_path):
         yaml_content = textwrap.dedent("""\
             name: bad_nlu

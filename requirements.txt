@@ -17,6 +17,7 @@ redis>=5.0
 # Date resolution (Step 3)
 dateparser>=1.2
 holidays>=0.40
+pyyaml>=6.0
 
 # Observability
 opentelemetry-sdk>=1.20
