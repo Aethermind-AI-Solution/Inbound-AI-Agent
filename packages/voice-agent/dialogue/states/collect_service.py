@@ -15,52 +15,67 @@ class CollectServiceState(BaseState):
 
     def __init__(self, deps) -> None:
         super().__init__(deps)
-        self._reprompt_count = 0
+        self._fail_count = 0
 
     async def enter(self, context: CallContext) -> Action:
-        self._reprompt_count = 0
+        self._fail_count = 0
         services = context.tenant_config.booking_model.services
-        names = ", ".join(s.name for s in services)
+        names = self._format_service_list(services)
         return Action(
             type=ActionType.ASK,
-            text=f"What service would you like? We offer {names}.",
+            text=f"We offer {names}. Which one would you like?",
         )
 
     async def handle(self, event: CallEvent, context: CallContext) -> Action:
         text = event.text or ""
         services = context.tenant_config.booking_model.services
-        result = await self.deps.nlu.extract_service(text, services)
 
+        result = await self.deps.nlu.extract_service(text, services)
         if result.service_id is not None:
             svc = next(s for s in services if s.id == result.service_id)
             context.slots.service_id = svc.id
             context.slots.service_name = svc.name
             return Action(type=ActionType.TRANSITION, next_state=CallState.COLLECT_DATETIME)
 
-        if self._is_asking_about_services(text):
+        if await self.deps.nlu.is_negative(text):
             names = self._format_service_list(services)
             return Action(
                 type=ActionType.ASK,
-                text=f"Sure! We offer {names}. Which one would you like?",
+                text=(
+                    f"I understand. Right now we only offer {names}. "
+                    "Would any of those work for you, or would you like us to call you back?"
+                ),
             )
 
-        self._reprompt_count += 1
-        if self._reprompt_count >= 3:
+        if self._is_question_or_exploration(text):
+            names = self._format_service_list(services)
+            return Action(
+                type=ActionType.ASK,
+                text=f"Those are all the services we have right now — {names}. Which one interests you?",
+            )
+
+        self._fail_count += 1
+        if self._fail_count >= 4:
             context.fallback_reason = "repeated_failure"
             return Action(type=ActionType.TRANSITION, next_state=CallState.CALLBACK_CAPTURE)
 
         names = self._format_service_list(services)
         return Action(
             type=ActionType.ASK,
-            text=f"I'm not sure which service you mean. We have {names}. Which would you like?",
+            text=f"Sorry, I didn't catch that. We have {names}. Which would you like?",
         )
 
     @staticmethod
-    def _is_asking_about_services(text: str) -> bool:
+    def _is_question_or_exploration(text: str) -> bool:
         lower = text.lower()
-        question_words = ("what", "which", "tell me", "list", "options", "available", "offer", "do you have")
-        service_words = ("service", "option", "offer", "available", "menu", "do you do", "you have", "else")
-        return any(q in lower for q in question_words) and any(s in lower for s in service_words)
+        patterns = (
+            "what else", "anything else", "other service", "other option",
+            "what do you", "what service", "what are", "tell me",
+            "is there", "do you have", "do you offer", "third",
+            "more option", "more service", "something else",
+            "what about", "any other", "besides",
+        )
+        return any(p in lower for p in patterns)
 
     @staticmethod
     def _format_service_list(services) -> str:

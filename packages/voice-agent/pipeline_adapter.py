@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 BARGE_IN_COOLDOWN = 1.5
 ECHO_GUARD_SECS = 1.0
+TRANSCRIPTION_DEBOUNCE = 2.0
 
 
 class PipelineAdapter(FrameProcessor):
@@ -44,6 +45,7 @@ class PipelineAdapter(FrameProcessor):
         self._bot_speaking = False
         self._bot_speak_start: float = 0
         self._last_interruption_time: float = 0
+        self._last_transcription_time: float = 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -97,20 +99,29 @@ class PipelineAdapter(FrameProcessor):
         await self.push_frame(frame, direction)
 
     def _should_drop_transcription(self, frame: TranscriptionFrame) -> bool:
+        now = time.monotonic()
         if self._bot_speaking:
             logger.debug("Dropping transcription while bot is speaking: %r", frame.text)
             return True
-        since_interruption = time.monotonic() - self._last_interruption_time
+        since_interruption = now - self._last_interruption_time
         if since_interruption < BARGE_IN_COOLDOWN:
             logger.debug(
                 "Dropping stale transcription %.1fs after barge-in: %r",
                 since_interruption, frame.text,
             )
             return True
+        since_last = now - self._last_transcription_time
+        if since_last < TRANSCRIPTION_DEBOUNCE:
+            logger.debug(
+                "Dropping rapid transcription %.1fs after last: %r",
+                since_last, frame.text,
+            )
+            return True
         return False
 
     async def _handle_transcription(self, frame: TranscriptionFrame) -> None:
         self._cancel_silence_timer()
+        self._last_transcription_time = time.monotonic()
         logger.info("User said: %r", frame.text)
         event = CallEvent(type=EventType.TRANSCRIPTION, text=frame.text)
         try:

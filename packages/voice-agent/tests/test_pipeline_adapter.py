@@ -160,6 +160,7 @@ class TestMultipleTranscriptions:
         adapter.push_frame = AsyncMock()
 
         for text in ["hello", "I want a haircut", "tomorrow"]:
+            adapter._last_transcription_time = 0
             frame = make_transcription_frame(text, finalized=True)
             await adapter.process_frame(frame, MagicMock())
 

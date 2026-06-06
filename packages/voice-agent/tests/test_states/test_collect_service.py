@@ -43,9 +43,10 @@ class TestCollectServiceState:
         assert "haircut" in action.text.lower()
 
     @pytest.mark.asyncio
-    async def test_three_failures_goes_to_callback(self, deps, context):
+    async def test_four_failures_goes_to_callback(self, deps, context):
         state = CollectServiceState(deps)
         await state.enter(context)
+        await state.handle(make_transcription("xyz"), context)
         await state.handle(make_transcription("xyz"), context)
         await state.handle(make_transcription("xyz"), context)
         action = await state.handle(make_transcription("xyz"), context)

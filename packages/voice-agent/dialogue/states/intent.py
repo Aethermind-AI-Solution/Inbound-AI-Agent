@@ -24,10 +24,7 @@ class IntentState(BaseState):
         self._auth_fail_count = 0
         return Action(
             type=ActionType.ASK,
-            text=(
-                "How can I help you today? I can help with booking an appointment, "
-                "checking an existing booking, rescheduling, or cancelling."
-            ),
+            text="How can I help you today?",
         )
 
     async def handle(self, event: CallEvent, context: CallContext) -> Action:
@@ -50,12 +47,16 @@ class IntentState(BaseState):
             context.fallback_reason = "repeated_failure"
             return Action(type=ActionType.TRANSITION, next_state=CallState.CALLBACK_CAPTURE)
 
+        if self._reprompt_count == 1:
+            return Action(
+                type=ActionType.ASK,
+                text="Sorry, I didn't quite get that. What would you like to do?",
+            )
         return Action(
             type=ActionType.ASK,
             text=(
-                "No worries! I can help you book a new appointment, "
-                "check on an existing one, reschedule, or cancel. "
-                "Which would you like?"
+                "I can help you book an appointment, check on an existing one, "
+                "reschedule, or cancel. Which would you like?"
             ),
         )
 
