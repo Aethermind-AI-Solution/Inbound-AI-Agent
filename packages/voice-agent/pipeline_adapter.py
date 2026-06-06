@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 BARGE_IN_COOLDOWN = 1.5
+ECHO_GUARD_SECS = 1.0
 
 
 class PipelineAdapter(FrameProcessor):
@@ -41,6 +42,7 @@ class PipelineAdapter(FrameProcessor):
         self._silence_task: asyncio.Task | None = None
         self._pending_silence_timeout: float | None = None
         self._bot_speaking = False
+        self._bot_speak_start: float = 0
         self._last_interruption_time: float = 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -59,6 +61,7 @@ class PipelineAdapter(FrameProcessor):
 
         if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_speaking = True
+            self._bot_speak_start = time.monotonic()
             await self.push_frame(frame, direction)
             return
 
@@ -72,9 +75,16 @@ class PipelineAdapter(FrameProcessor):
 
         if isinstance(frame, VADUserStartedSpeakingFrame):
             if self._bot_speaking:
-                logger.info("Barge-in detected — interrupting bot speech")
-                self._last_interruption_time = time.monotonic()
-                await self.broadcast_interruption()
+                since_bot_started = time.monotonic() - self._bot_speak_start
+                if since_bot_started < ECHO_GUARD_SECS:
+                    logger.debug(
+                        "Ignoring VAD during echo guard (%.1fs after bot started)",
+                        since_bot_started,
+                    )
+                else:
+                    logger.info("Barge-in detected — interrupting bot speech")
+                    self._last_interruption_time = time.monotonic()
+                    await self.broadcast_interruption()
             await self.push_frame(frame, direction)
             return
 

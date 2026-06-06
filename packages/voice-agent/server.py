@@ -188,8 +188,8 @@ async def _run_pipeline(
             language="en",
             model="nova-2-phonecall",
             interim_results=True,
-            endpointing=500,
-            utterance_end_ms=1500,
+            endpointing=700,
+            utterance_end_ms=2000,
             smart_format=True,
         ),
     )
@@ -218,8 +218,8 @@ async def _run_pipeline(
     vad = VADProcessor(
         vad_analyzer=SileroVADAnalyzer(
             params=VADParams(
-                confidence=0.6,
-                start_secs=0.2,
+                confidence=0.7,
+                start_secs=0.3,
                 stop_secs=0.3,
             ),
         ),
