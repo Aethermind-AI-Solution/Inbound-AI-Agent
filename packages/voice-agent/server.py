@@ -18,17 +18,22 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-import json
 from html import escape
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import uvicorn
 from fastapi import FastAPI, Form, WebSocket
 from fastapi.responses import Response
+
+if TYPE_CHECKING:
+    from packages.voice_agent.config.models import TenantConfig
+    from packages.voice_agent.dialogue.nlu.base import NLUService
 
 project_root = Path(__file__).parent.parent.parent
 env_file = project_root / ".env"
@@ -53,6 +58,9 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 async def lifespan(app_instance: FastAPI):
     if not DEEPGRAM_API_KEY:
         logger.error("DEEPGRAM_API_KEY not set")
+        sys.exit(1)
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        logger.error("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must both be set")
         sys.exit(1)
     if not TUNNEL_URL:
         logger.warning("TUNNEL_URL not set — /incoming-call will return error TwiML")
@@ -219,7 +227,7 @@ async def _run_pipeline(
     await runner.run(task)
 
 
-def _create_nlu(config):
+def _create_nlu(config: TenantConfig) -> NLUService:
     """Create NLU service — Claude Haiku if API key is set, otherwise StubNLU."""
     if ANTHROPIC_API_KEY:
         from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
