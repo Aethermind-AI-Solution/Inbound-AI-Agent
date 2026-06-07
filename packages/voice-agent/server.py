@@ -35,7 +35,7 @@ project_root = Path(__file__).parent.parent.parent
 env_file = project_root / ".env"
 if env_file.exists():
     from dotenv import load_dotenv
-    load_dotenv(env_file)
+    load_dotenv(env_file, override=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -284,6 +284,7 @@ async def _run_pipeline(
     ])
 
     worker = PipelineTask(pipeline, params=PipelineParams(enable_metrics=True))
+    guardrails.set_worker(worker)
 
     from packages.voice_agent.flows.nodes import make_request_callback_tool
     flow_manager = FlowManager(
