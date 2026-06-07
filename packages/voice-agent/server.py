@@ -1,10 +1,9 @@
 """
-Twilio inbound call server — connects phone calls to the dialogue state machine.
+Twilio inbound call server — connects phone calls to the voice booking agent.
 
-Custom FastAPI server with three routes:
-  POST /incoming-call — Twilio webhook, returns TwiML to open a media stream
-  WebSocket /ws — receives Twilio media stream, runs pipecat pipeline
-  GET /health — health check
+Pipecat Flows pipeline with GPT-4o:
+  transport.input() → STT → GuardrailProcessor → ContextAggregator.user()
+  → GPT-4o LLM → TTS → transport.output() → ContextAggregator.assistant()
 
 Usage:
   # Terminal 1: Start Cloudflare tunnel
@@ -22,18 +21,15 @@ import json
 import logging
 import os
 import sys
+import time as time_mod
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import uvicorn
 from fastapi import FastAPI, Form, WebSocket
 from fastapi.responses import Response
-
-if TYPE_CHECKING:
-    from packages.voice_agent.config.models import TenantConfig
-    from packages.voice_agent.dialogue.nlu.base import NLUService
 
 project_root = Path(__file__).parent.parent.parent
 env_file = project_root / ".env"
@@ -51,7 +47,30 @@ TUNNEL_URL = os.environ.get("TUNNEL_URL", "")
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+MAX_CALLS_PER_WINDOW = 3
+RATE_WINDOW_SECONDS = 900  # 15 minutes
+
+
+def _mask_phone(phone: str) -> str:
+    if len(phone) > 4:
+        return phone[:-4] + "****"
+    return "****"
+
+
+_call_timestamps: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(phone: str) -> bool:
+    now = time_mod.monotonic()
+    window_start = now - RATE_WINDOW_SECONDS
+    timestamps = _call_timestamps[phone]
+    _call_timestamps[phone] = [t for t in timestamps if t > window_start]
+    if len(_call_timestamps[phone]) >= MAX_CALLS_PER_WINDOW:
+        return False
+    _call_timestamps[phone].append(now)
+    return True
 
 
 @asynccontextmanager
@@ -61,6 +80,9 @@ async def lifespan(app_instance: FastAPI):
         sys.exit(1)
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
         logger.error("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must both be set")
+        sys.exit(1)
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY not set")
         sys.exit(1)
     if not TUNNEL_URL:
         logger.warning("TUNNEL_URL not set — /incoming-call will return error TwiML")
@@ -76,6 +98,13 @@ TWIML_ERROR = """\
   <Hangup/>
 </Response>"""
 
+TWIML_RATE_LIMITED = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>You've called several times recently. Please try again in a few minutes.</Say>
+  <Hangup/>
+</Response>"""
+
 
 @app.get("/health")
 async def health():
@@ -88,7 +117,11 @@ async def incoming_call(From: str = Form("unknown"), CallSid: str = Form("unknow
         logger.error("TUNNEL_URL not set — cannot build TwiML response")
         return Response(content=TWIML_ERROR, media_type="application/xml")
 
-    logger.info(f"Incoming call from {From} (CallSid={CallSid})")
+    logger.info("Incoming call from %s (CallSid=%s)", _mask_phone(From), CallSid)
+
+    if not _check_rate_limit(From):
+        logger.warning("Rate limited caller %s", _mask_phone(From))
+        return Response(content=TWIML_RATE_LIMITED, media_type="application/xml")
 
     twiml = f"""\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -112,16 +145,15 @@ async def websocket_twilio(websocket: WebSocket):
     call_sid = None
     try:
         stream_sid, call_sid, caller_phone = await _parse_twilio_start(websocket)
-        logger.info(f"Call started: call_sid={call_sid}, caller={caller_phone}")
+        logger.info("Call started: call_sid=%s, caller=%s", call_sid, _mask_phone(caller_phone))
         await _run_pipeline(websocket, stream_sid, call_sid, caller_phone)
     except Exception:
-        logger.exception(f"Error in call {call_sid or 'unknown'}")
+        logger.exception("Error in call %s", call_sid or "unknown")
     finally:
-        logger.info(f"Call ended: {call_sid or 'unknown'}")
+        logger.info("Call ended: %s", call_sid or "unknown")
 
 
 async def _parse_twilio_start(websocket: WebSocket) -> tuple[str, str, str]:
-    """Wait for Twilio's 'start' event and extract stream/call metadata."""
     async for raw in websocket.iter_text():
         msg = json.loads(raw)
         if msg.get("event") == "connected":
@@ -143,27 +175,43 @@ async def _run_pipeline(
     call_sid: str,
     caller_phone: str,
 ) -> None:
-    """Create and run the pipecat pipeline for a single call."""
+    import asyncio
+
     from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.audio.vad.vad_analyzer import VADParams
     from pipecat.pipeline.pipeline import Pipeline
     from pipecat.pipeline.runner import PipelineRunner
     from pipecat.pipeline.task import PipelineParams, PipelineTask
-    from pipecat.processors.audio.vad_processor import VADProcessor
+    from pipecat.processors.aggregators.llm_context import LLMContext
+    from pipecat.processors.aggregators.llm_response_universal import (
+        LLMContextAggregatorPair,
+        LLMUserAggregatorParams,
+    )
     from pipecat.serializers.twilio import TwilioFrameSerializer
     from pipecat.services.deepgram.stt import DeepgramSTTService
     from pipecat.services.deepgram.tts import DeepgramTTSService
+    from pipecat.services.openai.llm import OpenAILLMService
     from pipecat.transports.websocket.fastapi import (
         FastAPIWebsocketParams,
         FastAPIWebsocketTransport,
     )
+    from pipecat_flows import FlowManager
 
     from packages.voice_agent.data.mock_adapter import MockDataAdapter
     from packages.voice_agent.dialogue.budget.memory_tracker import InMemoryBudgetTracker
     from packages.voice_agent.dialogue.checkpoint.memory import InMemoryCheckpointStore
-    from packages.voice_agent.dialogue.manager import DialogueManager
-    from packages.voice_agent.pipeline_adapter import PipelineAdapter
-    from packages.voice_agent.tests.test_states.conftest import make_tenant_config
+    from packages.voice_agent.flows.guardrails import GuardrailProcessor
+    from packages.voice_agent.flows.nodes import create_callback_capture_node, create_greeting_node
+
+    config = _load_tenant_config()
+    data = MockDataAdapter()
+    budget_tracker = InMemoryBudgetTracker()
+    checkpoint_store = InMemoryCheckpointStore()
+    call_start = time_mod.monotonic()
+
+    caller_info = await asyncio.to_thread(
+        data.resolve_or_create_caller, config.meta.tenant_id, caller_phone
+    )
 
     serializer = TwilioFrameSerializer(
         stream_sid=stream_sid,
@@ -199,69 +247,105 @@ async def _run_pipeline(
         settings=DeepgramTTSService.Settings(voice="aura-asteria-en"),
     )
 
-    config = make_tenant_config()
-    data = MockDataAdapter()
-    checkpoint = InMemoryCheckpointStore()
-    budget_tracker = InMemoryBudgetTracker()
-
-    nlu = _create_nlu(config)
-
-    dm = DialogueManager(
-        config=config,
-        data_adapter=data,
-        nlu=nlu,
-        checkpoint_store=checkpoint,
-        caller_phone=caller_phone,
-        call_id=call_sid,
-        budget_tracker=budget_tracker,
+    llm = OpenAILLMService(
+        api_key=OPENAI_API_KEY,
+        settings=OpenAILLMService.Settings(
+            model="gpt-4o",
+            max_completion_tokens=200,
+            temperature=0.4,
+        ),
     )
-    vad = VADProcessor(
-        vad_analyzer=SileroVADAnalyzer(
-            params=VADParams(
-                confidence=0.7,
-                start_secs=0.3,
-                stop_secs=0.3,
+
+    guardrails = GuardrailProcessor(
+        max_turns=config.guardrails.max_turns,
+        max_seconds=config.guardrails.max_call_seconds,
+        call_start=call_start,
+    )
+
+    context = LLMContext()
+    context_aggregator = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(confidence=0.7, start_secs=0.3, stop_secs=0.3),
             ),
         ),
     )
 
-    adapter = PipelineAdapter(dm)
-
     pipeline = Pipeline([
         transport.input(),
-        vad,
         stt,
-        adapter,
+        guardrails,
+        context_aggregator.user(),
+        llm,
         tts,
         transport.output(),
+        context_aggregator.assistant(),
     ])
 
-    task = PipelineTask(pipeline, params=PipelineParams(enable_metrics=True))
+    worker = PipelineTask(pipeline, params=PipelineParams(enable_metrics=True))
+
+    from packages.voice_agent.flows.nodes import make_request_callback_tool
+    flow_manager = FlowManager(
+        worker=worker,
+        llm=llm,
+        context_aggregator=context_aggregator,
+        transport=transport,
+        global_functions=[make_request_callback_tool()],
+    )
+
+    flow_manager.state.update({
+        "config": config,
+        "data_adapter": data,
+        "budget_tracker": budget_tracker,
+        "checkpoint_store": checkpoint_store,
+        "caller_phone": caller_phone,
+        "caller_id": caller_info.id,
+        "tenant_id": config.meta.tenant_id,
+        "call_id": call_sid,
+        "call_start": call_start,
+        "turn_count": 0,
+    })
+
+    @transport.event_handler("on_client_connected")
+    async def on_client_connected(transport_ref, client):
+        logger.info("Client connected — checking budget and initializing flow")
+        within_budget = await budget_tracker.check_budget(
+            config.meta.tenant_id, config.guardrails.monthly_budget_inr
+        )
+        if not within_budget:
+            logger.warning("Tenant %s over budget — routing to callback", config.meta.tenant_id)
+            flow_manager.state["fallback_reason"] = "budget_exceeded"
+            initial_node = create_callback_capture_node(flow_manager)
+        else:
+            initial_node = create_greeting_node(flow_manager)
+        await flow_manager.initialize(initial_node)
+
+    @transport.event_handler("on_client_disconnected")
+    async def on_client_disconnected(transport_ref, client):
+        elapsed = time_mod.monotonic() - call_start
+        logger.info("Client disconnected — call lasted %.1fs", elapsed)
+        try:
+            await budget_tracker.record_usage(config.meta.tenant_id, elapsed)
+        except Exception:
+            logger.exception("Error recording call usage")
+        await worker.cancel()
+
     runner = PipelineRunner()
-    await runner.run(task)
+    await runner.run(worker)
 
 
-def _create_nlu(config: TenantConfig) -> NLUService:
-    """Create NLU service — Claude Haiku if API key is set, otherwise StubNLU."""
-    if ANTHROPIC_API_KEY:
-        from packages.voice_agent.dialogue.nlu.claude_nlu import ClaudeNLUService
-        from packages.voice_agent.dialogue.nlu.llm_client import AnthropicLLMClient
-
-        llm_client = AnthropicLLMClient(api_key=ANTHROPIC_API_KEY)
-        return ClaudeNLUService(llm_client, config)
-    else:
-        from packages.voice_agent.dialogue.nlu.stub import StubNLUService
-
-        logger.warning("ANTHROPIC_API_KEY not set — using StubNLU")
-        return StubNLUService()
+def _load_tenant_config():
+    from packages.voice_agent.tests.test_states.conftest import make_tenant_config
+    return make_tenant_config()
 
 
 if __name__ == "__main__":
     logger.info("")
     logger.info("=" * 55)
-    logger.info("  VOICE BOOKING AGENT — Twilio server")
-    logger.info(f"  Tunnel: {TUNNEL_URL or '(not set)'}")
-    logger.info(f"  Webhook: https://{TUNNEL_URL}/incoming-call")
+    logger.info("  VOICE BOOKING AGENT — Pipecat Flows + GPT-4o")
+    logger.info("  Tunnel: %s", TUNNEL_URL or "(not set)")
+    logger.info("  Webhook: https://%s/incoming-call", TUNNEL_URL)
     logger.info("=" * 55)
     logger.info("")
 
