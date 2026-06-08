@@ -54,8 +54,15 @@ class TestCheckAvailability:
 
     @pytest.mark.asyncio
     async def test_closed_day_rejected(self, flow_manager):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
         from packages.voice_agent.flows.handlers import check_availability
-        result, node = await check_availability({"date": "2026-06-07", "time": "10:00"}, flow_manager)
+
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+        days_ahead = (6 - now.weekday()) % 7 or 7  # next Sunday
+        future_sunday = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        result, node = await check_availability({"date": future_sunday, "time": "10:00"}, flow_manager)
         assert node is None
         assert "closed" in result["error"].lower()
 
