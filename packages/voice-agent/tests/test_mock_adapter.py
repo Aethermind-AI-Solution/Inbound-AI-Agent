@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from packages.voice_agent.data.adapter import CallerInfo
 from packages.voice_agent.data.mock_adapter import MockDataAdapter
 
 
@@ -97,3 +98,33 @@ class TestIsNewFlag:
         adapter.resolve_or_create_caller("t1", "+919999999999")
         caller = adapter.resolve_or_create_caller("t1", "+919999999999")
         assert caller.is_new is False
+
+
+class TestCallerInfoPreferredLanguage:
+    def test_caller_info_has_preferred_language_field(self):
+        info = CallerInfo(id="c1", phone="+91123", tenant_id="t1", verified_at=None)
+        assert info.preferred_language is None
+
+    def test_caller_info_preferred_language_set(self):
+        info = CallerInfo(
+            id="c1", phone="+91123", tenant_id="t1",
+            verified_at=None, preferred_language="hi-IN",
+        )
+        assert info.preferred_language == "hi-IN"
+
+
+class TestUpdateCallerLanguage:
+    def test_update_caller_language_stores_preference(self):
+        adapter = MockDataAdapter()
+        caller = adapter.resolve_or_create_caller("t1", "+91123")
+        adapter.update_caller_language(caller.id, "hi-IN")
+        caller2 = adapter.resolve_or_create_caller("t1", "+91123")
+        assert caller2.preferred_language == "hi-IN"
+
+    def test_update_caller_language_overwrites_previous(self):
+        adapter = MockDataAdapter()
+        caller = adapter.resolve_or_create_caller("t1", "+91123")
+        adapter.update_caller_language(caller.id, "hi-IN")
+        adapter.update_caller_language(caller.id, "ta-IN")
+        caller2 = adapter.resolve_or_create_caller("t1", "+91123")
+        assert caller2.preferred_language == "ta-IN"

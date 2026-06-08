@@ -53,6 +53,7 @@ class CallerInfo:
     tenant_id: str
     verified_at: datetime | None
     is_new: bool = False
+    preferred_language: str | None = None
 
 
 @dataclass

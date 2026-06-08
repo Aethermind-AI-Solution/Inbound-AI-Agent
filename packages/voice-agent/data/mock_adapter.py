@@ -34,6 +34,7 @@ class MockDataAdapter:
                 tenant_id=existing.tenant_id,
                 verified_at=existing.verified_at,
                 is_new=False,
+                preferred_language=existing.preferred_language,
             )
         caller = CallerInfo(
             id=f"caller-{len(self._callers) + 1}",
@@ -121,3 +122,9 @@ class MockDataAdapter:
             b["status"] = "cancelled"
             return True
         return False
+
+    def update_caller_language(self, caller_id: str, language: str) -> None:
+        for caller in self._callers.values():
+            if caller.id == caller_id:
+                caller.preferred_language = language
+                return
