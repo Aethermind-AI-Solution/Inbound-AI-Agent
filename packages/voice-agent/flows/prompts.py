@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from packages.voice_agent.config.models import TenantConfig
+
+
+def _today_ist() -> str:
+    return datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%A, %B %d, %Y")
 
 LANGUAGE_NAMES: dict[str, str] = {
     "en-IN": "English",
@@ -15,6 +21,14 @@ LANGUAGE_NAMES: dict[str, str] = {
     "te-IN": "Telugu",
     "mr-IN": "Marathi",
     "bn-IN": "Bengali",
+}
+
+LANGUAGE_SCRIPTS: dict[str, str] = {
+    "hi-IN": "Devanagari (हिंदी)",
+    "ta-IN": "Tamil (தமிழ்)",
+    "te-IN": "Telugu (తెలుగు)",
+    "mr-IN": "Devanagari (मराठी)",
+    "bn-IN": "Bengali (বাংলা)",
 }
 
 
@@ -31,17 +45,27 @@ def build_role_message(config: TenantConfig, language: str | None = None) -> str
 
     lang_instruction = ""
     if lang_name != "English":
-        lang_instruction = (
-            f"\n\nLANGUAGE: Respond in {lang_name}. "
-            f"Use natural, conversational {lang_name} — not formal or textbook. "
-            f"Keep tool names and function parameters in English."
-        )
+        script = LANGUAGE_SCRIPTS.get(lang, "")
+        if script:
+            lang_instruction = (
+                f"\n\nLANGUAGE: Respond in {lang_name} using {script} script. "
+                f"NEVER use romanized/transliterated {lang_name} in Latin letters. "
+                f"Use natural, conversational {lang_name} — not formal or textbook. "
+                f"Keep tool names and function parameters in English."
+            )
+        else:
+            lang_instruction = (
+                f"\n\nLANGUAGE: Respond in {lang_name}. "
+                f"Use natural, conversational {lang_name} — not formal or textbook. "
+                f"Keep tool names and function parameters in English."
+            )
 
     return (
         f"You are a friendly, professional receptionist for {config.persona.business_name}. "
         f"{disclosure} "
         f"Tone: {config.persona.tone}. "
         f"Services offered: {services_list}. "
+        f"Today's date: {_today_ist()}. "
         "\n\nRULES FOR VOICE CONVERSATION: "
         "Keep every response under 2 sentences. Be concise — the caller is on the phone. "
         "Never use markdown, bullet points, or numbered lists. "
@@ -99,12 +123,14 @@ def collect_datetime_task(config: TenantConfig) -> list[dict]:
     hours_text = "\n".join(hours_lines) if hours_lines else "  (not specified)"
     return [{"role": "system", "content": (
         "Ask the caller for their preferred date and time for the appointment.\n"
+        f"Today is {_today_ist()}.\n"
         f"Business hours:\n{hours_text}\n"
         f"Booking window: up to {bm.booking_window_days} days ahead.\n"
         f"Minimum notice: {bm.min_notice_min} minutes from now.\n\n"
         "When the caller gives a date and time, call check_availability with "
         "the date as YYYY-MM-DD and time as HH:MM in 24-hour format. "
         "Parse natural expressions like 'next Tuesday at 3pm' into the structured format. "
+        "Use the current year when the caller says a date without a year. "
         "If the caller is vague about time (just says a date), ask what time works for them. "
         "Do not share internal scheduling details — just ask naturally."
     )}]

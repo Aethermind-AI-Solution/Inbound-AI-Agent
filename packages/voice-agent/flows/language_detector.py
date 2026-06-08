@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
-from lingua import Language, LanguageDetectorBuilder
 from pipecat.frames.frames import (
     STTUpdateSettingsFrame,
     TTSSpeakFrame,
@@ -12,7 +12,7 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.services.settings import TTSSettings
+from pipecat.services.settings import STTSettings, TTSSettings
 
 if TYPE_CHECKING:
     from pipecat.pipeline.worker import PipelineWorker
@@ -21,16 +21,39 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-LINGUA_LANGUAGE_MAP: dict[Language, str] = {
-    Language.HINDI: "hi-IN",
-    Language.TAMIL: "ta-IN",
-    Language.TELUGU: "te-IN",
-    Language.MARATHI: "mr-IN",
-    Language.BENGALI: "bn-IN",
-}
-
 CONFIDENCE_THRESHOLD = 0.7
 MAX_DETECTION_TURNS = 2
+
+# Common Hindi words that appear in romanized (Latin-script) transcripts.
+# Sarvam STT transcribes Hindi speech as romanized English text and tags it
+# as en-IN, so we need keyword-based detection instead.
+_HINDI_KEYWORDS: set[str] = {
+    "mujhe", "chahiye", "kya", "hai", "hain", "nahi", "nahin", "ji",
+    "aap", "aapka", "aapke", "aapki", "haan", "theek", "accha",
+    "karna", "karenge", "karana", "kariye", "karo", "kar",
+    "pehle", "baad", "kal", "aaj", "parso", "subah", "dopahar", "shaam",
+    "baje", "baj", "bajke",
+    "booking", "appointment",  # these are common in both, so not counted alone
+    "salon", "parlour",
+    "mera", "meri", "mere", "humara", "hamara",
+    "kitna", "kitne", "kitni", "kab", "kaise", "kahan", "kaun",
+    "dijiye", "batao", "bataiye", "bataye", "boliye", "bolo",
+    "namaste", "dhanyavaad", "shukriya", "swagat",
+    "lena", "dena", "milna", "milega", "milegi",
+    "wala", "wali", "wale",
+    "abhi", "phir", "toh", "bhi", "aur", "lekin", "ya",
+    "samay", "samajh", "samjha", "samjhi",
+    "chahte", "chahti", "chaahiye",
+    "rakhiye", "rakh", "rakho",
+    "kahinge", "kahunga", "kahungi",
+}
+_HINDI_KEYWORD_THRESHOLD = 2
+_HINDI_KEYWORD_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(w) for w in _HINDI_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+_DEVANAGARI_PATTERN = re.compile(r"[ऀ-ॿ]")
 
 
 def _build_lingua_detector(languages: list[str]) -> Any:
@@ -38,10 +61,21 @@ def _build_lingua_detector(languages: list[str]) -> Any:
 
     Always includes English as a candidate. Returns ``None`` if fewer than
     two lingua languages can be resolved (detection would be meaningless).
+    Lazy-imports lingua so that Sarvam-based detection never loads it.
     """
+    from lingua import Language, LanguageDetectorBuilder
+
+    lingua_language_map: dict[Language, str] = {
+        Language.HINDI: "hi-IN",
+        Language.TAMIL: "ta-IN",
+        Language.TELUGU: "te-IN",
+        Language.MARATHI: "mr-IN",
+        Language.BENGALI: "bn-IN",
+    }
+
     lingua_langs: list[Language] = [Language.ENGLISH]
     for lang_code in languages:
-        for lingua_lang, code in LINGUA_LANGUAGE_MAP.items():
+        for lingua_lang, code in lingua_language_map.items():
             if code == lang_code and lingua_lang not in lingua_langs:
                 lingua_langs.append(lingua_lang)
     if len(lingua_langs) < 2:
@@ -77,6 +111,7 @@ class LanguageDetectorProcessor(FrameProcessor):
         caller_id: str | None,
         data_adapter: Any,
         preferred_language: str | None = None,
+        stt_provider: str = "deepgram",
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -86,6 +121,7 @@ class LanguageDetectorProcessor(FrameProcessor):
         self._data_adapter = data_adapter
         self._languages = config.persona.languages
         self._fallback = config.persona.fallback_language
+        self._stt_provider = stt_provider
         self._locked = False
         self._language = self._fallback
         self._turn_count = 0
@@ -102,6 +138,10 @@ class LanguageDetectorProcessor(FrameProcessor):
         elif preferred_language and preferred_language in self._languages:
             self._locked = True
             self._language = preferred_language
+        elif self._stt_provider == "sarvam":
+            # Sarvam STT romanizes Hindi and tags it en-IN, so its
+            # language_code is unreliable.  Use keyword detection instead.
+            pass
         else:
             self._detector = _build_lingua_detector(self._languages)
             if self._detector is None:
@@ -124,6 +164,16 @@ class LanguageDetectorProcessor(FrameProcessor):
 
     def _detect_language(self, text: str) -> tuple[str | None, float]:
         """Run lingua on *text* and return ``(lang_code, confidence)``."""
+        from lingua import Language as LinguaLanguage
+
+        lingua_language_map: dict[LinguaLanguage, str] = {
+            LinguaLanguage.HINDI: "hi-IN",
+            LinguaLanguage.TAMIL: "ta-IN",
+            LinguaLanguage.TELUGU: "te-IN",
+            LinguaLanguage.MARATHI: "mr-IN",
+            LinguaLanguage.BENGALI: "bn-IN",
+        }
+
         if self._detector is None:
             return None, 0.0
 
@@ -133,19 +183,18 @@ class LanguageDetectorProcessor(FrameProcessor):
 
         confidence_values = self._detector.compute_language_confidence_values(text)
         confidence = 0.0
-        for lang, conf in confidence_values:
-            if lang == result:
-                confidence = conf
+        for cv in confidence_values:
+            if cv.language == result:
+                confidence = cv.value
                 break
 
-        # Map the lingua result back to a tenant language code.
-        if result == Language.ENGLISH:
+        if result == LinguaLanguage.ENGLISH:
             for lang_code in self._languages:
                 if lang_code.startswith("en-"):
                     return lang_code, confidence
             return None, 0.0
 
-        code = LINGUA_LANGUAGE_MAP.get(result)
+        code = lingua_language_map.get(result)
         if code and code in self._languages:
             return code, confidence
 
@@ -160,13 +209,17 @@ class LanguageDetectorProcessor(FrameProcessor):
 
         if isinstance(frame, TranscriptionFrame):
             self._turn_count += 1
-            detected_code, confidence = self._detect_language(frame.text)
 
-            if detected_code and confidence >= CONFIDENCE_THRESHOLD:
+            if self._stt_provider == "sarvam":
+                detected_code = self._detect_from_stt_frame(frame)
+            else:
+                detected_code = self._detect_from_text(frame.text)
+
+            if detected_code:
                 logger.info(
-                    "Language detected: %s (confidence=%.2f, turn=%d)",
+                    "Language detected: %s (provider=%s, turn=%d)",
                     detected_code,
-                    confidence,
+                    self._stt_provider,
                     self._turn_count,
                 )
                 await self._lock_in(detected_code)
@@ -180,6 +233,59 @@ class LanguageDetectorProcessor(FrameProcessor):
 
         await self.push_frame(frame, direction)
 
+    def _detect_from_stt_frame(self, frame: TranscriptionFrame) -> str | None:
+        """Detect language from a Sarvam STT frame.
+
+        Strategy depends on how STT is initialized:
+        - STT in hi-IN mode: Devanagari text = Hindi, Latin-only = English.
+        - STT in en-IN mode: keyword matching on romanized transcript.
+        """
+        text = frame.text or ""
+        if not text.strip():
+            return None
+
+        devanagari_chars = len(_DEVANAGARI_PATTERN.findall(text))
+
+        if devanagari_chars >= 2:
+            for lang in self._languages:
+                if lang.startswith("hi-"):
+                    logger.info(
+                        "Devanagari script detected (%d chars): %s",
+                        devanagari_chars,
+                        text[:80],
+                    )
+                    return lang
+
+        latin_chars = sum(1 for c in text if c.isascii() and c.isalpha())
+        if latin_chars > 0 and devanagari_chars == 0:
+            for lang in self._languages:
+                if lang.startswith("en-"):
+                    logger.info(
+                        "Latin-only text detected (English): %s",
+                        text[:80],
+                    )
+                    return lang
+
+        matches = _HINDI_KEYWORD_PATTERN.findall(text)
+        if len(matches) >= _HINDI_KEYWORD_THRESHOLD:
+            for lang in self._languages:
+                if lang.startswith("hi-"):
+                    logger.info(
+                        "Hindi keywords in romanized text: %s (count=%d)",
+                        matches,
+                        len(matches),
+                    )
+                    return lang
+
+        return None
+
+    def _detect_from_text(self, text: str) -> str | None:
+        """Run lingua on text; return lang code if confidence >= threshold."""
+        detected_code, confidence = self._detect_language(text)
+        if detected_code and confidence >= CONFIDENCE_THRESHOLD:
+            return detected_code
+        return None
+
     async def _lock_in(self, language: str) -> None:
         """Lock in *language* and propagate settings changes."""
         self._locked = True
@@ -187,15 +293,18 @@ class LanguageDetectorProcessor(FrameProcessor):
 
         # Tell STT to switch language (upstream toward the transport input).
         await self.push_frame(
-            STTUpdateSettingsFrame(settings={"language": language}),
+            STTUpdateSettingsFrame(delta=STTSettings(language=language)),
             FrameDirection.UPSTREAM,
         )
 
-        # Tell TTS to switch voice (via worker, downstream toward output).
+        # Tell TTS to switch voice AND language (via worker, downstream).
         tts_voice = self._config.pipeline.tts_voices.get(language)
-        if tts_voice and self._worker:
+        if self._worker:
+            tts_delta = TTSSettings(language=language)
+            if tts_voice:
+                tts_delta.voice = tts_voice
             await self._worker.queue_frame(
-                TTSUpdateSettingsFrame(delta=TTSSettings(voice=tts_voice))
+                TTSUpdateSettingsFrame(delta=tts_delta)
             )
 
         # Persist to flow state.

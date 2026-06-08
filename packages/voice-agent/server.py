@@ -48,9 +48,10 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "")
 
-MAX_CALLS_PER_WINDOW = 3
+MAX_CALLS_PER_WINDOW = 10
 RATE_WINDOW_SECONDS = 900  # 15 minutes
 
 
@@ -82,8 +83,8 @@ async def lifespan(app_instance: FastAPI):
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
         logger.error("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must both be set")
         sys.exit(1)
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY not set")
+    if not ANTHROPIC_API_KEY and not OPENAI_API_KEY:
+        logger.error("Either ANTHROPIC_API_KEY or OPENAI_API_KEY must be set")
         sys.exit(1)
     if not TUNNEL_URL:
         logger.warning("TUNNEL_URL not set — /incoming-call will return error TwiML")
@@ -183,8 +184,8 @@ async def _run_pipeline(
     from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.audio.vad.vad_analyzer import VADParams
     from pipecat.pipeline.pipeline import Pipeline
-    from pipecat.pipeline.runner import PipelineRunner
-    from pipecat.pipeline.task import PipelineParams, PipelineTask
+    from pipecat.pipeline.worker import PipelineParams, PipelineWorker
+    from pipecat.workers.runner import WorkerRunner
     from pipecat.processors.aggregators.llm_context import LLMContext
     from pipecat.processors.aggregators.llm_response_universal import (
         LLMContextAggregatorPair,
@@ -193,6 +194,7 @@ async def _run_pipeline(
     from pipecat.serializers.twilio import TwilioFrameSerializer
     from pipecat.services.deepgram.stt import DeepgramSTTService
     from pipecat.services.deepgram.tts import DeepgramTTSService
+    from pipecat.services.anthropic.llm import AnthropicLLMService
     from pipecat.services.openai.llm import OpenAILLMService
     from pipecat.transports.websocket.fastapi import (
         FastAPIWebsocketParams,
@@ -221,6 +223,13 @@ async def _run_pipeline(
     if preferred_language and preferred_language in config.persona.languages:
         initial_language = preferred_language
 
+    stt_initial_language = initial_language
+    if config.pipeline.stt_provider == "sarvam" and not preferred_language:
+        for lang in config.persona.languages:
+            if lang.startswith("hi-"):
+                stt_initial_language = lang
+                break
+
     serializer = TwilioFrameSerializer(
         stream_sid=stream_sid,
         call_sid=call_sid,
@@ -242,7 +251,7 @@ async def _run_pipeline(
         from pipecat.services.sarvam.stt import SarvamSTTService
         stt = SarvamSTTService(
             api_key=SARVAM_API_KEY,
-            settings=SarvamSTTService.Settings(language=initial_language),
+            settings=SarvamSTTService.Settings(language=stt_initial_language),
         )
     else:
         stt = DeepgramSTTService(
@@ -270,14 +279,24 @@ async def _run_pipeline(
             settings=DeepgramTTSService.Settings(voice=initial_voice),
         )
 
-    llm = OpenAILLMService(
-        api_key=OPENAI_API_KEY,
-        settings=OpenAILLMService.Settings(
-            model="gpt-4o",
-            max_completion_tokens=200,
-            temperature=0.4,
-        ),
-    )
+    if config.pipeline.llm_provider == "openai":
+        llm = OpenAILLMService(
+            api_key=OPENAI_API_KEY,
+            settings=OpenAILLMService.Settings(
+                model="gpt-4o",
+                max_completion_tokens=200,
+                temperature=0.4,
+            ),
+        )
+    else:
+        llm = AnthropicLLMService(
+            api_key=ANTHROPIC_API_KEY,
+            settings=AnthropicLLMService.Settings(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=200,
+                temperature=0.4,
+            ),
+        )
 
     guardrails = GuardrailProcessor(
         max_turns=config.guardrails.max_turns,
@@ -293,6 +312,7 @@ async def _run_pipeline(
         caller_id=caller_info.id,
         data_adapter=data,
         preferred_language=getattr(caller_info, "preferred_language", None),
+        stt_provider=config.pipeline.stt_provider,
     )
 
     context = LLMContext()
@@ -317,7 +337,7 @@ async def _run_pipeline(
         context_aggregator.assistant(),
     ])
 
-    worker = PipelineTask(pipeline, params=PipelineParams(enable_metrics=True))
+    worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True))
     guardrails.set_worker(worker)
     language_detector.set_worker(worker)
 
@@ -370,13 +390,37 @@ async def _run_pipeline(
             logger.exception("Error recording call usage")
         await worker.cancel()
 
-    runner = PipelineRunner()
-    await runner.run(worker)
+    runner = WorkerRunner()
+    await runner.add_workers(worker)
+    await runner.run()
 
 
 def _load_tenant_config():
+    from packages.voice_agent.config.models import LanguagePolicy, PersonaConfig, PipelineConfig
     from packages.voice_agent.tests.test_states.conftest import make_tenant_config
-    return make_tenant_config()
+    return make_tenant_config(
+        persona=PersonaConfig(
+            business_name="Glamour Salon",
+            greeting={
+                "en-IN": "Welcome to Glamour Salon!",
+                "hi-IN": "ग्लैमर सैलून में आपका स्वागत है!",
+            },
+            ai_disclosure={
+                "en-IN": "I'm an AI assistant.",
+                "hi-IN": "आप एक AI असिस्टेंट से बात कर रहे हैं।",
+            },
+            tone="warm",
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            language_policy=LanguagePolicy(greeting="default", match_caller=True),
+        ),
+        pipeline=PipelineConfig(
+            stt_provider="sarvam",
+            tts_provider="sarvam",
+            llm_provider="openai",
+            tts_voices={"en-IN": "anushka", "hi-IN": "anushka"},
+        ),
+    )
 
 
 if __name__ == "__main__":

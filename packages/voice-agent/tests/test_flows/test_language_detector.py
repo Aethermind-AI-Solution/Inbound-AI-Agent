@@ -178,7 +178,7 @@ class TestLanguageDetectorMultiLanguage:
 
         stt_updates = [f for f in pushed if isinstance(f, STTUpdateSettingsFrame)]
         assert len(stt_updates) == 1
-        assert stt_updates[0].settings["language"] == "hi-IN"
+        assert stt_updates[0].delta.language == "hi-IN"
 
     @pytest.mark.asyncio
     async def test_lock_in_re_greets_when_language_differs(self):
