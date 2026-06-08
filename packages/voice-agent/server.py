@@ -2,7 +2,7 @@
 Twilio inbound call server — connects phone calls to the voice booking agent.
 
 Pipecat Flows pipeline with GPT-4o:
-  transport.input() → STT → GuardrailProcessor → ContextAggregator.user()
+  transport.input() → STT → LanguageDetector → GuardrailProcessor → ContextAggregator.user()
   → GPT-4o LLM → TTS → transport.output() → ContextAggregator.assistant()
 
 Usage:
@@ -48,6 +48,7 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "")
 
 MAX_CALLS_PER_WINDOW = 3
 RATE_WINDOW_SECONDS = 900  # 15 minutes
@@ -86,6 +87,8 @@ async def lifespan(app_instance: FastAPI):
         sys.exit(1)
     if not TUNNEL_URL:
         logger.warning("TUNNEL_URL not set — /incoming-call will return error TwiML")
+    if not SARVAM_API_KEY:
+        logger.info("SARVAM_API_KEY not set — Sarvam STT/TTS will not be available")
     yield
 
 
@@ -213,6 +216,11 @@ async def _run_pipeline(
         data.resolve_or_create_caller, config.meta.tenant_id, caller_phone
     )
 
+    initial_language = config.persona.fallback_language
+    preferred_language = getattr(caller_info, "preferred_language", None)
+    if preferred_language and preferred_language in config.persona.languages:
+        initial_language = preferred_language
+
     serializer = TwilioFrameSerializer(
         stream_sid=stream_sid,
         call_sid=call_sid,
@@ -230,22 +238,37 @@ async def _run_pipeline(
         ),
     )
 
-    stt = DeepgramSTTService(
-        api_key=DEEPGRAM_API_KEY,
-        settings=DeepgramSTTService.Settings(
-            language="en",
-            model="nova-2-phonecall",
-            interim_results=True,
-            endpointing=700,
-            utterance_end_ms=2000,
-            smart_format=True,
-        ),
-    )
+    if config.pipeline.stt_provider == "sarvam":
+        from pipecat.services.sarvam.stt import SarvamSTTService
+        stt = SarvamSTTService(
+            api_key=SARVAM_API_KEY,
+            settings=SarvamSTTService.Settings(language=initial_language),
+        )
+    else:
+        stt = DeepgramSTTService(
+            api_key=DEEPGRAM_API_KEY,
+            settings=DeepgramSTTService.Settings(
+                language=initial_language.split("-")[0],
+                model="nova-2-phonecall",
+                interim_results=True,
+                endpointing=700,
+                utterance_end_ms=2000,
+                smart_format=True,
+            ),
+        )
 
-    tts = DeepgramTTSService(
-        api_key=DEEPGRAM_API_KEY,
-        settings=DeepgramTTSService.Settings(voice="aura-asteria-en"),
-    )
+    initial_voice = config.pipeline.tts_voices.get(initial_language, "aura-asteria-en")
+    if config.pipeline.tts_provider == "sarvam":
+        from pipecat.services.sarvam.tts import SarvamTTSService
+        tts = SarvamTTSService(
+            api_key=SARVAM_API_KEY,
+            settings=SarvamTTSService.Settings(voice=initial_voice),
+        )
+    else:
+        tts = DeepgramTTSService(
+            api_key=DEEPGRAM_API_KEY,
+            settings=DeepgramTTSService.Settings(voice=initial_voice),
+        )
 
     llm = OpenAILLMService(
         api_key=OPENAI_API_KEY,
@@ -262,6 +285,16 @@ async def _run_pipeline(
         call_start=call_start,
     )
 
+    from packages.voice_agent.flows.language_detector import LanguageDetectorProcessor
+
+    language_detector = LanguageDetectorProcessor(
+        config=config,
+        flow_state={},  # will be replaced with flow_manager.state after it's created
+        caller_id=caller_info.id,
+        data_adapter=data,
+        preferred_language=getattr(caller_info, "preferred_language", None),
+    )
+
     context = LLMContext()
     context_aggregator = LLMContextAggregatorPair(
         context,
@@ -275,6 +308,7 @@ async def _run_pipeline(
     pipeline = Pipeline([
         transport.input(),
         stt,
+        language_detector,
         guardrails,
         context_aggregator.user(),
         llm,
@@ -285,6 +319,7 @@ async def _run_pipeline(
 
     worker = PipelineTask(pipeline, params=PipelineParams(enable_metrics=True))
     guardrails.set_worker(worker)
+    language_detector.set_worker(worker)
 
     from packages.voice_agent.flows.nodes import make_request_callback_tool
     flow_manager = FlowManager(
@@ -306,7 +341,10 @@ async def _run_pipeline(
         "call_id": call_sid,
         "call_start": call_start,
         "turn_count": 0,
+        "language": initial_language,
     })
+
+    language_detector._flow_state = flow_manager.state
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport_ref, client):
