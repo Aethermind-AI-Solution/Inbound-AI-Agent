@@ -111,6 +111,9 @@ class LanguageDetectorProcessor(FrameProcessor):
     def set_worker(self, worker: PipelineWorker) -> None:
         self._worker = worker
 
+    def set_flow_state(self, flow_state: dict[str, Any]) -> None:
+        self._flow_state = flow_state
+
     @property
     def is_locked(self) -> bool:
         return self._locked

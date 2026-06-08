@@ -344,7 +344,7 @@ async def _run_pipeline(
         "language": initial_language,
     })
 
-    language_detector._flow_state = flow_manager.state
+    language_detector.set_flow_state(flow_manager.state)
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport_ref, client):
