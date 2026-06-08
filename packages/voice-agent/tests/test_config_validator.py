@@ -14,6 +14,7 @@ from packages.voice_agent.config.models import (
     LanguagePolicy,
     MetaConfig,
     PersonaConfig,
+    PipelineConfig,
     Resource,
     Service,
     TenantConfig,
@@ -184,6 +185,9 @@ def _make_valid_config(**overrides) -> TenantConfig:
         escalation=overrides.get("escalation", _escalation()),
         booking_model=overrides.get("booking_model", _booking_model()),
         guardrails=overrides.get("guardrails", _guardrails()),
+        pipeline=overrides.get("pipeline", PipelineConfig(
+            tts_voices={"en-IN": "aura-asteria-en", "hi-IN": "anushka"},
+        )),
     )
 
 
@@ -294,8 +298,16 @@ class TestValidateTenantConfigReturnsErrors:
         """All six supported codes are individually valid."""
         supported = ["en-IN", "hi-IN", "ta-IN", "te-IN", "mr-IN", "bn-IN"]
         for lang in supported:
-            persona = _persona(languages=[lang], fallback_language=lang)
-            config = _make_valid_config(persona=persona)
+            persona = _persona(
+                languages=[lang],
+                fallback_language=lang,
+                greeting={lang: "Welcome!"},
+                ai_disclosure={lang: "I'm AI."},
+            )
+            config = _make_valid_config(
+                persona=persona,
+                pipeline=PipelineConfig(tts_voices={lang: "aura-asteria-en"}),
+            )
             errors = validate_tenant_config(config)
             assert errors == [], f"Expected no errors for language {lang}, got {errors}"
 
@@ -335,6 +347,102 @@ class TestValidateTenantConfigReturnsErrors:
         config = _make_valid_config(booking_model=bm, auth=auth, persona=persona)
         errors = validate_tenant_config(config)
         assert len(errors) >= 3  # at least resource, otp, hours — language error too
+
+    # Rule 4 extension: en-US, en-GB, en-AU should be supported
+    def test_us_english_supported(self):
+        """en-US should be a valid language code."""
+        persona = _persona(
+            languages=["en-US"],
+            fallback_language="en-US",
+            greeting={"en-US": "Welcome!"},
+            ai_disclosure={"en-US": "I'm AI."},
+        )
+        config = _make_valid_config(
+            persona=persona,
+            pipeline=PipelineConfig(tts_voices={"en-US": "aura-asteria-en"}),
+        )
+        errors = validate_tenant_config(config)
+        lang_errors = [e for e in errors if "en-US" in e and "unsupported" in e]
+        assert lang_errors == []
+
+    def test_gb_au_english_supported(self):
+        """en-GB and en-AU should be valid language codes."""
+        for code in ("en-GB", "en-AU"):
+            persona = _persona(
+                languages=[code],
+                fallback_language=code,
+                greeting={code: "Welcome!"},
+                ai_disclosure={code: "I'm AI."},
+            )
+            config = _make_valid_config(
+                persona=persona,
+                pipeline=PipelineConfig(tts_voices={code: "aura-asteria-en"}),
+            )
+            errors = validate_tenant_config(config)
+            lang_errors = [e for e in errors if code in e and "unsupported" in e]
+            assert lang_errors == [], f"Expected {code} to be supported, got: {lang_errors}"
+
+    # Rule 6: greeting must have a key for every language
+    def test_greeting_missing_language_key_detected(self):
+        persona = _persona(
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            greeting={"en-IN": "Welcome!"},  # missing hi-IN
+            ai_disclosure={"en-IN": "I'm AI.", "hi-IN": "Main AI hoon."},
+        )
+        config = _make_valid_config(persona=persona)
+        errors = validate_tenant_config(config)
+        assert any("greeting" in e.lower() and "hi-IN" in e for e in errors)
+
+    def test_greeting_covers_all_languages_passes(self):
+        persona = _persona(
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            greeting={"en-IN": "Welcome!", "hi-IN": "Swagat!"},
+            ai_disclosure={"en-IN": "I'm AI.", "hi-IN": "Main AI hoon."},
+        )
+        config = _make_valid_config(persona=persona)
+        errors = validate_tenant_config(config)
+        greeting_errors = [e for e in errors if "greeting" in e.lower()]
+        assert greeting_errors == []
+
+    # Rule 7: ai_disclosure must have a key for every language
+    def test_ai_disclosure_missing_language_key_detected(self):
+        persona = _persona(
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            greeting={"en-IN": "Welcome!", "hi-IN": "Swagat!"},
+            ai_disclosure={"en-IN": "I'm AI."},  # missing hi-IN
+        )
+        config = _make_valid_config(persona=persona)
+        errors = validate_tenant_config(config)
+        assert any("ai_disclosure" in e.lower() and "hi-IN" in e for e in errors)
+
+    # Rule 8: pipeline.tts_voices must have a key for every language
+    def test_tts_voices_missing_language_key_detected(self):
+        persona = _persona(
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            greeting={"en-IN": "Welcome!", "hi-IN": "Swagat!"},
+            ai_disclosure={"en-IN": "I'm AI.", "hi-IN": "Main AI hoon."},
+        )
+        pipeline = PipelineConfig(tts_voices={"en-IN": "aura-asteria-en"})  # missing hi-IN
+        config = _make_valid_config(persona=persona, pipeline=pipeline)
+        errors = validate_tenant_config(config)
+        assert any("tts_voices" in e.lower() and "hi-IN" in e for e in errors)
+
+    def test_tts_voices_covers_all_languages_passes(self):
+        persona = _persona(
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            greeting={"en-IN": "Welcome!", "hi-IN": "Swagat!"},
+            ai_disclosure={"en-IN": "I'm AI.", "hi-IN": "Main AI hoon."},
+        )
+        pipeline = PipelineConfig(tts_voices={"en-IN": "aura-asteria-en", "hi-IN": "anushka"})
+        config = _make_valid_config(persona=persona, pipeline=pipeline)
+        errors = validate_tenant_config(config)
+        tts_errors = [e for e in errors if "tts_voices" in e.lower()]
+        assert tts_errors == []
 
 
 # ---------------------------------------------------------------------------

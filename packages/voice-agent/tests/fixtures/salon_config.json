@@ -112,5 +112,11 @@
     "scope": "global",
     "recording_consent": true,
     "retention_days": 90
+  },
+  "pipeline": {
+    "tts_voices": {
+      "en-IN": "aura-asteria-en",
+      "hi-IN": "anushka"
+    }
   }
 }

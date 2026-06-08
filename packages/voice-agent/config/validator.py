@@ -24,7 +24,7 @@ from packages.voice_agent.config.models import TenantConfig
 # ---------------------------------------------------------------------------
 
 SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
-    {"en-IN", "hi-IN", "ta-IN", "te-IN", "mr-IN", "bn-IN"}
+    {"en-IN", "hi-IN", "ta-IN", "te-IN", "mr-IN", "bn-IN", "en-US", "en-GB", "en-AU"}
 )
 
 
@@ -113,6 +113,42 @@ def _check_fallback_language(config: TenantConfig) -> list[str]:
     return []
 
 
+def _check_greeting_keys(config: TenantConfig) -> list[str]:
+    """Rule 6: every language in persona.languages must have a key in persona.greeting."""
+    errors: list[str] = []
+    for lang in config.persona.languages:
+        if lang not in config.persona.greeting:
+            errors.append(
+                f"persona.greeting is missing key '{lang}'; "
+                f"every language in persona.languages must have a greeting"
+            )
+    return errors
+
+
+def _check_ai_disclosure_keys(config: TenantConfig) -> list[str]:
+    """Rule 7: every language in persona.languages must have a key in persona.ai_disclosure."""
+    errors: list[str] = []
+    for lang in config.persona.languages:
+        if lang not in config.persona.ai_disclosure:
+            errors.append(
+                f"persona.ai_disclosure is missing key '{lang}'; "
+                f"every language in persona.languages must have an ai_disclosure"
+            )
+    return errors
+
+
+def _check_tts_voices_keys(config: TenantConfig) -> list[str]:
+    """Rule 8: every language in persona.languages must have a key in pipeline.tts_voices."""
+    errors: list[str] = []
+    for lang in config.persona.languages:
+        if lang not in config.pipeline.tts_voices:
+            errors.append(
+                f"pipeline.tts_voices is missing key '{lang}'; "
+                f"every language in persona.languages must have a TTS voice mapping"
+            )
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Public functions
 # ---------------------------------------------------------------------------
@@ -123,6 +159,9 @@ _RULES = [
     _check_business_hours,
     _check_supported_languages,
     _check_fallback_language,
+    _check_greeting_keys,
+    _check_ai_disclosure_keys,
+    _check_tts_voices_keys,
 ]
 
 

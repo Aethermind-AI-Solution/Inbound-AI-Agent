@@ -16,6 +16,7 @@ from packages.voice_agent.config.models import (
     LanguagePolicy,
     MetaConfig,
     PersonaConfig,
+    PipelineConfig,
     Resource,
     Service,
     TenantConfig,
@@ -94,6 +95,7 @@ def make_tenant_config(**overrides) -> TenantConfig:
             monthly_budget_inr=5000.0, scope="booking_only",
             recording_consent=True, retention_days=90,
         ),
+        pipeline=PipelineConfig(tts_voices={"en-IN": "aura-asteria-en"}),
     )
     defaults.update(overrides)
     return TenantConfig(**defaults)
