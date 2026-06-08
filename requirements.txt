@@ -13,6 +13,9 @@ twilio>=9.0
 # LLM
 anthropic>=0.30
 
+# Language detection
+lingua-language-detector>=2.0
+
 # Data
 supabase>=2.0
 redis>=5.0
