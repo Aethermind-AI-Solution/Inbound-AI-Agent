@@ -7,8 +7,8 @@
   },
   "persona": {
     "business_name": "Glamour Salon",
-    "greeting": "Namaste, Glamour Salon mein aapka swagat hai.",
-    "ai_disclosure": "Aap ek AI assistant se baat kar rahe hain.",
+    "greeting": {"en-IN": "Welcome to Glamour Salon!", "hi-IN": "Namaste, Glamour Salon mein aapka swagat hai."},
+    "ai_disclosure": {"en-IN": "I'm an AI assistant.", "hi-IN": "Aap ek AI assistant se baat kar rahe hain."},
     "tone": "warm",
     "languages": ["en-IN", "hi-IN"],
     "fallback_language": "en-IN",

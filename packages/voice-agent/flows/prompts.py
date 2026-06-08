@@ -8,9 +8,11 @@ if TYPE_CHECKING:
 
 def build_role_message(config: TenantConfig) -> str:
     services_list = ", ".join(s.name for s in config.booking_model.services)
+    fallback = config.persona.fallback_language
+    disclosure = config.persona.ai_disclosure.get(fallback, "")
     return (
         f"You are a friendly, professional receptionist for {config.persona.business_name}. "
-        f"{config.persona.ai_disclosure} "
+        f"{disclosure} "
         f"Tone: {config.persona.tone}. "
         f"Services offered: {services_list}. "
         "\n\nRULES FOR VOICE CONVERSATION: "

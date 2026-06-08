@@ -47,8 +47,8 @@ def _language_policy(**kwargs):
 def _persona(**kwargs):
     base = {
         "business_name": "Glow Salon",
-        "greeting": "Namaste, Glow Salon mein aapka swagat hai.",
-        "ai_disclosure": "Aap ek AI assistant se baat kar rahe hain.",
+        "greeting": {"en-IN": "Welcome!", "hi-IN": "Swagat hai!"},
+        "ai_disclosure": {"en-IN": "I'm an AI assistant.", "hi-IN": "Main AI hoon."},
         "tone": "warm",
         "languages": ["hi", "en"],
         "fallback_language": "hi",
@@ -742,3 +742,37 @@ class TestPipelineConfig:
     def test_tenant_config_pipeline_defaults(self):
         tc = make_tenant_config()
         assert tc.pipeline.stt_provider == "deepgram"
+
+
+# ---------------------------------------------------------------------------
+# PersonaConfig multilingual dict fields
+# ---------------------------------------------------------------------------
+
+
+class TestPersonaConfigMultilingual:
+    def test_greeting_as_dict(self):
+        from packages.voice_agent.config.models import PersonaConfig, LanguagePolicy
+        p = PersonaConfig(
+            business_name="Test",
+            greeting={"en-IN": "Welcome!", "hi-IN": "Swagat hai!"},
+            ai_disclosure={"en-IN": "I'm AI.", "hi-IN": "Main AI hoon."},
+            tone="warm",
+            languages=["en-IN", "hi-IN"],
+            fallback_language="en-IN",
+            language_policy=LanguagePolicy(greeting="default", match_caller=True),
+        )
+        assert p.greeting["en-IN"] == "Welcome!"
+        assert p.greeting["hi-IN"] == "Swagat hai!"
+
+    def test_ai_disclosure_as_dict(self):
+        from packages.voice_agent.config.models import PersonaConfig, LanguagePolicy
+        p = PersonaConfig(
+            business_name="Test",
+            greeting={"en-IN": "Welcome!"},
+            ai_disclosure={"en-IN": "I'm AI."},
+            tone="warm",
+            languages=["en-IN"],
+            fallback_language="en-IN",
+            language_policy=LanguagePolicy(greeting="default", match_caller=False),
+        )
+        assert p.ai_disclosure["en-IN"] == "I'm AI."

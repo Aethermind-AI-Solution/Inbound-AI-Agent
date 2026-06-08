@@ -91,8 +91,8 @@ class PipelineConfig(BaseModel):
 
 class PersonaConfig(BaseModel):
     business_name: str
-    greeting: str
-    ai_disclosure: str
+    greeting: dict[str, str]
+    ai_disclosure: dict[str, str]
     tone: str
     languages: list[str] = PydanticField(min_length=1)
     fallback_language: str

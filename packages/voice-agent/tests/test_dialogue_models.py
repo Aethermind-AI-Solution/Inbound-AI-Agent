@@ -150,8 +150,8 @@ class TestCallContext:
             ),
             persona=PersonaConfig(
                 business_name="Test Salon",
-                greeting="Hello",
-                ai_disclosure="I am an AI",
+                greeting={"en-IN": "Hello"},
+                ai_disclosure={"en-IN": "I am an AI"},
                 tone="warm",
                 languages=["en-IN"],
                 fallback_language="en-IN",

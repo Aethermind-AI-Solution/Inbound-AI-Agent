@@ -49,8 +49,8 @@ def _language_policy(**kwargs):
 def _persona(**kwargs):
     base = {
         "business_name": "Glow Salon",
-        "greeting": "Namaste, Glow Salon mein aapka swagat hai.",
-        "ai_disclosure": "Aap ek AI assistant se baat kar rahe hain.",
+        "greeting": {"en-IN": "Welcome!", "hi-IN": "Swagat hai!"},
+        "ai_disclosure": {"en-IN": "I'm an AI assistant.", "hi-IN": "Main AI hoon."},
         "tone": "warm",
         "languages": ["en-IN", "hi-IN"],
         "fallback_language": "hi-IN",

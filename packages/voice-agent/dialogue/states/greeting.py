@@ -15,7 +15,10 @@ class GreetingState(BaseState):
 
     async def enter(self, context: CallContext) -> Action:
         persona = context.tenant_config.persona
-        text = f"{persona.greeting}. {persona.ai_disclosure}"
+        fallback = persona.fallback_language
+        greeting = persona.greeting.get(fallback, "")
+        disclosure = persona.ai_disclosure.get(fallback, "")
+        text = f"{greeting}. {disclosure}"
         return Action(
             type=ActionType.SPEAK,
             text=text,

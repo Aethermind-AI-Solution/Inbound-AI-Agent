@@ -36,8 +36,8 @@ def make_tenant_config(**overrides) -> TenantConfig:
         ),
         persona=PersonaConfig(
             business_name="Glamour Salon",
-            greeting="Welcome to Glamour Salon",
-            ai_disclosure="I'm an AI assistant.",
+            greeting={"en-IN": "Welcome to Glamour Salon"},
+            ai_disclosure={"en-IN": "I'm an AI assistant."},
             tone="warm",
             languages=["en-IN"],
             fallback_language="en-IN",
