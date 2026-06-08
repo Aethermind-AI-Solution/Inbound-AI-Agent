@@ -16,6 +16,7 @@ from packages.voice_agent.config.models import (
     LanguagePolicy,
     MetaConfig,
     PersonaConfig,
+    PipelineConfig,
     Resource,
     Service,
     TenantConfig,
@@ -687,3 +688,57 @@ class TestTenantConfig:
         assert tc.auth.otp_channel == "sms"
         assert tc.booking_model.resources[0].calendar_ref == "priya@salon.com"
         assert tc.booking_model.services[0].custom_fields[0].key == "occasion"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for PipelineConfig tests
+# ---------------------------------------------------------------------------
+
+
+def make_tenant_config(**pipeline_kwargs):
+    """Return a TenantConfig using default helpers; pipeline field uses kwargs."""
+    kwargs = {}
+    if pipeline_kwargs:
+        kwargs["pipeline"] = PipelineConfig(**pipeline_kwargs)
+    return TenantConfig(
+        meta=_meta(),
+        persona=_persona(),
+        integration=_integration(),
+        auth=_auth(),
+        edge_profile=_edge_profile(),
+        escalation=_escalation(),
+        booking_model=_booking_model(),
+        guardrails=_guardrails(),
+        **kwargs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# PipelineConfig
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineConfig:
+    def test_defaults(self):
+        pc = PipelineConfig()
+        assert pc.stt_provider == "deepgram"
+        assert pc.tts_provider == "deepgram"
+        assert pc.llm_provider == "openai"
+        assert pc.tts_voices == {}
+
+    def test_sarvam_provider(self):
+        pc = PipelineConfig(stt_provider="sarvam", tts_provider="sarvam")
+        assert pc.stt_provider == "sarvam"
+        assert pc.tts_provider == "sarvam"
+
+    def test_invalid_stt_provider_rejected(self):
+        with pytest.raises(ValidationError):
+            PipelineConfig(stt_provider="invalid")
+
+    def test_tts_voices_map(self):
+        pc = PipelineConfig(tts_voices={"en-IN": "anushka"})
+        assert pc.tts_voices == {"en-IN": "anushka"}
+
+    def test_tenant_config_pipeline_defaults(self):
+        tc = make_tenant_config()
+        assert tc.pipeline.stt_provider == "deepgram"

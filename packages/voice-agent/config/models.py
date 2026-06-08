@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 from pydantic import Field as PydanticField
@@ -73,7 +73,19 @@ class LanguagePolicy(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 3. PersonaConfig
+# 3. PipelineConfig
+# ---------------------------------------------------------------------------
+
+
+class PipelineConfig(BaseModel):
+    stt_provider: Literal["deepgram", "sarvam"] = "deepgram"
+    tts_provider: Literal["deepgram", "sarvam"] = "deepgram"
+    llm_provider: Literal["openai", "anthropic"] = "openai"
+    tts_voices: dict[str, str] = PydanticField(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# 4. PersonaConfig
 # ---------------------------------------------------------------------------
 
 
@@ -375,3 +387,4 @@ class TenantConfig(BaseModel):
     escalation: EscalationConfig
     booking_model: BookingModel
     guardrails: GuardrailsConfig
+    pipeline: PipelineConfig = PydanticField(default_factory=PipelineConfig)
