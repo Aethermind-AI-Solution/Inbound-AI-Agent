@@ -34,9 +34,10 @@ def make_request_callback_tool() -> FlowsFunctionSchema:
 
 def create_greeting_node(flow_manager: Any) -> dict:
     config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     return {
         "name": "greeting",
-        "role_message": prompts.build_role_message(config),
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.greeting_task(config),
         "respond_immediately": True,
         "functions": [
@@ -54,8 +55,10 @@ def create_greeting_node(flow_manager: Any) -> dict:
 
 def create_collect_service_node(flow_manager: Any) -> dict:
     config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     return {
         "name": "collect_service",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.collect_service_task(config),
         "functions": [
             _tool("select_service", "Record the caller's chosen service",
@@ -71,8 +74,10 @@ def create_collect_service_node(flow_manager: Any) -> dict:
 
 def create_collect_datetime_node(flow_manager: Any) -> dict:
     config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     return {
         "name": "collect_datetime",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.collect_datetime_task(config),
         "functions": [
             _tool("check_availability", "Check if a date and time has available staff",
@@ -86,9 +91,12 @@ def create_collect_datetime_node(flow_manager: Any) -> dict:
 
 
 def create_offer_slots_node(flow_manager: Any) -> dict:
+    config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     available = flow_manager.state.get("available_resources", [])
     return {
         "name": "offer_slots",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.offer_slots_task(available),
         "functions": [
             _tool("book_slot", "Reserve a slot with the chosen staff member",
@@ -105,6 +113,8 @@ def create_offer_slots_node(flow_manager: Any) -> dict:
 
 
 def create_collect_custom_node(flow_manager: Any) -> dict:
+    config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     custom_fields = flow_manager.state.get("custom_fields", [])
     properties = {}
     required = []
@@ -115,6 +125,7 @@ def create_collect_custom_node(flow_manager: Any) -> dict:
 
     return {
         "name": "collect_custom",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.collect_custom_task(custom_fields),
         "functions": [
             _tool("submit_custom_fields", "Submit the collected custom field values",
@@ -130,6 +141,8 @@ def create_collect_custom_node(flow_manager: Any) -> dict:
 
 
 def create_confirm_booking_node(flow_manager: Any) -> dict:
+    config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     summary = {
         "service_name": flow_manager.state.get("service_name"),
         "resource_name": flow_manager.state.get("resource_name"),
@@ -138,6 +151,7 @@ def create_confirm_booking_node(flow_manager: Any) -> dict:
     }
     return {
         "name": "confirm_booking",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.confirm_booking_task(summary),
         "functions": [
             _tool("confirm", "Confirm and finalize the booking",
@@ -151,6 +165,8 @@ def create_confirm_booking_node(flow_manager: Any) -> dict:
 
 
 def create_manage_booking_node(flow_manager: Any, intent: str) -> dict:
+    config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     bookings = flow_manager.state.get("bookings", [])
     functions = [
         _tool("done", "End the call when the caller is satisfied",
@@ -171,12 +187,15 @@ def create_manage_booking_node(flow_manager: Any, intent: str) -> dict:
 
     return {
         "name": "manage_booking",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.manage_booking_task(intent, bookings),
         "functions": functions,
     }
 
 
 def create_callback_capture_node(flow_manager: Any) -> dict:
+    config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     caller_phone = flow_manager.state.get("caller_phone", "unknown")
     reason = flow_manager.state.get("fallback_reason")
     digits = " ".join(caller_phone.lstrip("+"))
@@ -184,6 +203,7 @@ def create_callback_capture_node(flow_manager: Any) -> dict:
 
     return {
         "name": "callback_capture",
+        "role_message": prompts.build_role_message(config, language=language),
         "pre_actions": [{"type": "tts_say", "text": tts_text}],
         "task_messages": prompts.callback_capture_task(reason),
         "functions": [
@@ -199,8 +219,10 @@ def create_callback_capture_node(flow_manager: Any) -> dict:
 
 def create_close_node(flow_manager: Any) -> dict:
     config = flow_manager.state["config"]
+    language = flow_manager.state.get("language", config.persona.fallback_language)
     return {
         "name": "close",
+        "role_message": prompts.build_role_message(config, language=language),
         "task_messages": prompts.close_task(config),
         "post_actions": [{"type": "end_conversation"}],
     }

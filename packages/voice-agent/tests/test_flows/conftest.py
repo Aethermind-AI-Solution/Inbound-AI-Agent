@@ -22,6 +22,7 @@ def flow_state():
         "turn_count": 0,
         "call_start": time.monotonic(),
         "intent": None,
+        "language": "en-IN",
     }
 
 
