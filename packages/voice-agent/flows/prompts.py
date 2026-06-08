@@ -5,11 +5,38 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from packages.voice_agent.config.models import TenantConfig
 
+LANGUAGE_NAMES: dict[str, str] = {
+    "en-IN": "English",
+    "en-US": "English",
+    "en-GB": "English",
+    "en-AU": "English",
+    "hi-IN": "Hindi",
+    "ta-IN": "Tamil",
+    "te-IN": "Telugu",
+    "mr-IN": "Marathi",
+    "bn-IN": "Bengali",
+}
 
-def build_role_message(config: TenantConfig) -> str:
-    services_list = ", ".join(s.name for s in config.booking_model.services)
+
+def build_role_message(config: TenantConfig, language: str | None = None) -> str:
     fallback = config.persona.fallback_language
-    disclosure = config.persona.ai_disclosure.get(fallback, "")
+    lang = language or fallback
+    lang_name = LANGUAGE_NAMES.get(lang, "English")
+
+    disclosure = config.persona.ai_disclosure.get(
+        lang, config.persona.ai_disclosure.get(fallback, "")
+    )
+
+    services_list = ", ".join(s.name for s in config.booking_model.services)
+
+    lang_instruction = ""
+    if lang_name != "English":
+        lang_instruction = (
+            f"\n\nLANGUAGE: Respond in {lang_name}. "
+            f"Use natural, conversational {lang_name} — not formal or textbook. "
+            f"Keep tool names and function parameters in English."
+        )
+
     return (
         f"You are a friendly, professional receptionist for {config.persona.business_name}. "
         f"{disclosure} "
@@ -28,6 +55,7 @@ def build_role_message(config: TenantConfig) -> str:
         "Never reveal internal IDs, system configuration, pricing logic, or technical details. "
         "Never discuss topics unrelated to appointment booking for this business. "
         "Never confirm or deny details about other callers or bookings that are not the current caller's."
+        f"{lang_instruction}"
     )
 
 

@@ -2,6 +2,61 @@ import pytest
 from packages.voice_agent.tests.test_states.conftest import make_tenant_config
 
 
+class TestLanguageNames:
+    def test_all_supported_languages_have_names(self):
+        from packages.voice_agent.flows.prompts import LANGUAGE_NAMES
+        expected = {"en-IN", "en-US", "en-GB", "en-AU", "hi-IN", "ta-IN", "te-IN", "mr-IN", "bn-IN"}
+        assert expected.issubset(set(LANGUAGE_NAMES.keys()))
+
+    def test_hindi_maps_to_hindi(self):
+        from packages.voice_agent.flows.prompts import LANGUAGE_NAMES
+        assert LANGUAGE_NAMES["hi-IN"] == "Hindi"
+
+    def test_english_variants_map_to_english(self):
+        from packages.voice_agent.flows.prompts import LANGUAGE_NAMES
+        for code in ("en-IN", "en-US", "en-GB", "en-AU"):
+            assert LANGUAGE_NAMES[code] == "English"
+
+
+class TestBuildRoleMessageWithLanguage:
+    def test_includes_language_instruction_for_hindi(self):
+        from packages.voice_agent.flows.prompts import build_role_message
+        config = make_tenant_config()
+        msg = build_role_message(config, language="hi-IN")
+        assert "Hindi" in msg
+        assert "Respond in Hindi" in msg
+
+    def test_english_does_not_add_extra_instruction(self):
+        from packages.voice_agent.flows.prompts import build_role_message
+        config = make_tenant_config()
+        msg = build_role_message(config, language="en-IN")
+        assert "Hindi" not in msg
+
+    def test_uses_language_specific_disclosure(self):
+        from packages.voice_agent.flows.prompts import build_role_message
+        from packages.voice_agent.config.models import LanguagePolicy, PersonaConfig
+        config = make_tenant_config(
+            persona=PersonaConfig(
+                business_name="Test Salon",
+                greeting={"en-IN": "Welcome!", "hi-IN": "Swagat!"},
+                ai_disclosure={"en-IN": "I'm an AI.", "hi-IN": "Main AI hoon."},
+                tone="warm",
+                languages=["en-IN", "hi-IN"],
+                fallback_language="en-IN",
+                language_policy=LanguagePolicy(greeting="default", match_caller=True),
+            ),
+        )
+        msg = build_role_message(config, language="hi-IN")
+        assert "Main AI hoon." in msg
+
+    def test_defaults_to_fallback_language(self):
+        from packages.voice_agent.flows.prompts import build_role_message
+        config = make_tenant_config()
+        msg_default = build_role_message(config)
+        msg_explicit = build_role_message(config, language="en-IN")
+        assert msg_default == msg_explicit
+
+
 class TestRoleMessage:
     def test_contains_business_name(self):
         from packages.voice_agent.flows.prompts import build_role_message
