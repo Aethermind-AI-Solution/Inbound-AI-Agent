@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from pipecat.frames.frames import (
     STTUpdateSettingsFrame,
-    TTSSpeakFrame,
     TTSUpdateSettingsFrame,
     TranscriptionFrame,
 )
@@ -309,12 +308,6 @@ class LanguageDetectorProcessor(FrameProcessor):
 
         # Persist to flow state.
         self._flow_state["language"] = language
-
-        # Re-greet if the detected language differs from the fallback.
-        if language != self._fallback:
-            greeting = self._config.persona.greeting.get(language, "")
-            if greeting and self._worker:
-                await self._worker.queue_frame(TTSSpeakFrame(text=greeting))
 
         # Persist caller preference for repeat-caller fast-path.
         if self._caller_id and language != self._fallback and self._data_adapter:

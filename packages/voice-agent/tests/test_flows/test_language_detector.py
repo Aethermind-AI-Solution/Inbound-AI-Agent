@@ -181,7 +181,8 @@ class TestLanguageDetectorMultiLanguage:
         assert stt_updates[0].delta.language == "hi-IN"
 
     @pytest.mark.asyncio
-    async def test_lock_in_re_greets_when_language_differs(self):
+    async def test_lock_in_does_not_re_greet(self):
+        """Bilingual greeting covers both languages, so lock-in should not re-greet."""
         config = _make_config(["en-IN", "hi-IN"], fallback="en-IN")
         proc = _make_proc(config=config)
         proc.push_frame = AsyncMock()
@@ -193,26 +194,6 @@ class TestLanguageDetectorMultiLanguage:
 
         with patch.object(proc, "_detect_language", return_value=("hi-IN", 0.9)):
             frame = TranscriptionFrame(text="namaste", user_id="u", timestamp="0")
-            await proc.process_frame(frame, MagicMock())
-
-        tts_speaks = [f for f in queued if isinstance(f, TTSSpeakFrame)]
-        assert len(tts_speaks) == 1
-        assert tts_speaks[0].text == "Greeting in hi-IN"
-
-    @pytest.mark.asyncio
-    async def test_lock_in_does_not_re_greet_for_fallback_language(self):
-        config = _make_config(["en-IN", "hi-IN"], fallback="en-IN")
-        proc = _make_proc(config=config)
-        proc.push_frame = AsyncMock()
-
-        worker = MagicMock()
-        queued: list = []
-        worker.queue_frame = AsyncMock(side_effect=lambda f: queued.append(f))
-        proc.set_worker(worker)
-
-        # Detect English (the fallback) -- should not trigger a re-greet
-        with patch.object(proc, "_detect_language", return_value=("en-IN", 0.9)):
-            frame = TranscriptionFrame(text="hello", user_id="u", timestamp="0")
             await proc.process_frame(frame, MagicMock())
 
         tts_speaks = [f for f in queued if isinstance(f, TTSSpeakFrame)]

@@ -169,6 +169,8 @@ def create_manage_booking_node(flow_manager: Any, intent: str) -> dict:
     language = flow_manager.state.get("language", config.persona.fallback_language)
     bookings = flow_manager.state.get("bookings", [])
     functions = [
+        _tool("start_new_booking", "Start a new appointment booking",
+              {}, [], handlers.start_new_booking),
         _tool("done", "End the call when the caller is satisfied",
               {}, [], handlers.done),
     ]

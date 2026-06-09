@@ -103,6 +103,24 @@ Switching to Haiku 4.5 is the single biggest cost lever. The LLM is 85% of per-c
 ## Bug log
 *(append real bugs below as they occur, newest first, using the template)*
 
+### [2026-06-09] Bilingual greeting eliminates re-greet turn · area: voice
+Symptom: After language detection, `_lock_in()` sent a second greeting in the detected language. With the original English-only greeting this was needed, but it added a wasted turn.
+Root cause: Language detector re-greeted on every non-fallback lock-in. Once the greeting itself became bilingual (Hindi first, then English), the re-greet was redundant.
+Fix: Removed the `TTSSpeakFrame` re-greet from `_lock_in()`. The bilingual `greeting_task()` covers both languages upfront.
+Prevention: When changing the greeting strategy, always check downstream consumers like `_lock_in()` for stale complementary logic.
+
+### [2026-06-08] Sarvam STT en-IN mode converts Hindi speech to English text · area: voice
+Symptom: Caller spoke Hindi ("hair cut chahiye") but STT returned "Hair cut", "Four P", "Anyone do, anyone will do" — all English text. Language detector saw English, LLM responded in English.
+Root cause: Sarvam STT in `en-IN` mode aggressively maps Hindi speech sounds to English words/phrases. It doesn't just romanize — it actively translates/approximates.
+Fix: Start Sarvam STT in `hi-IN` mode for bilingual tenants (`stt_initial_language`). In hi-IN mode, Hindi speech is transcribed as Devanagari text and English speech is still handled correctly.
+Prevention: For any STT provider that does aggressive language-specific modeling, the initialization language determines the transcription behavior. Test with live Hindi audio, not just English.
+
+### [2026-06-08] GPT-4o outputs romanized Hindi instead of Devanagari · area: nlu
+Symptom: After switching LLM to GPT-4o, Hindi responses came out as romanized Latin text ("Aap kaun si service lena chahenge") instead of Devanagari. Sarvam TTS couldn't pronounce this properly.
+Root cause: GPT-4o defaults to romanized Hindi when told "Respond in Hindi" without script specification. Claude models tend to default to Devanagari, but GPT-4o does not.
+Fix: Added `LANGUAGE_SCRIPTS` dict and explicit instruction: "Respond in Hindi using Devanagari (हिंदी) script. NEVER use romanized/transliterated Hindi in Latin letters."
+Prevention: All non-English language instructions must specify the exact script. The `LANGUAGE_SCRIPTS` dict in `prompts.py` maps each supported language to its script name + native example.
+
 ### [2026-06-08] WorkerRunner.add_workers() must be awaited · area: infra
 Symptom: Call connected (Twilio `start` event received, pipeline linked) but immediately stalled — no audio processed, call hung for ~40s then disconnected. Log showed `RuntimeWarning: coroutine 'WorkerRunner.add_workers' was never awaited`.
 Root cause: `runner.add_workers(worker)` is a coroutine in Pipecat 1.3.0 but was called without `await`. The worker never actually started, so the pipeline never processed frames.
