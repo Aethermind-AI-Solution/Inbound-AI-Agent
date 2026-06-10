@@ -200,8 +200,13 @@ def create_callback_capture_node(flow_manager: Any) -> dict:
     language = flow_manager.state.get("language", config.persona.fallback_language)
     caller_phone = flow_manager.state.get("caller_phone", "unknown")
     reason = flow_manager.state.get("fallback_reason")
-    digits = " ".join(caller_phone.lstrip("+"))
-    tts_text = f"Your number on file is {digits}."
+    raw = caller_phone.lstrip("+")
+    if raw.startswith("91") and len(raw) == 12:
+        tts_text = f"Your number on file is plus 91, {' '.join(raw[2:])}."
+    elif raw.startswith("1") and len(raw) == 11:
+        tts_text = f"Your number on file is plus 1, {' '.join(raw[1:])}."
+    else:
+        tts_text = f"Your number on file is {' '.join(raw)}."
 
     return {
         "name": "callback_capture",

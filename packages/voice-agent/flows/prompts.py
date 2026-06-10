@@ -7,9 +7,11 @@ from zoneinfo import ZoneInfo
 if TYPE_CHECKING:
     from packages.voice_agent.config.models import TenantConfig
 
+IST = ZoneInfo("Asia/Kolkata")
+
 
 def _today_ist() -> str:
-    return datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%A, %B %d, %Y")
+    return datetime.now(IST).strftime("%A, %B %d, %Y")
 
 LANGUAGE_NAMES: dict[str, str] = {
     "en-IN": "English",
@@ -111,7 +113,7 @@ def greeting_task(config: TenantConfig) -> list[dict]:
 def collect_service_task(config: TenantConfig) -> list[dict]:
     service_lines = []
     for s in config.booking_model.services:
-        line = f"- {s.name} (ID: {s.id}, {s.duration_min} min"
+        line = f"- {s.name} ({s.duration_min} min"
         if s.price:
             line += f", ₹{s.price}"
         line += ")"
@@ -122,9 +124,8 @@ def collect_service_task(config: TenantConfig) -> list[dict]:
         f"{services_text}\n\n"
         "If the caller already mentioned which service they want earlier in the conversation, "
         "confirm it briefly and call select_service immediately — do not ask again. "
-        "When the caller picks a service, call select_service with the service ID. "
+        "When the caller picks a service, call select_service with the matching service_id from the function schema. "
         "If they ask about services, describe what's available naturally. "
-        "Do not read out the service IDs to the caller — just use the names. "
         "If they want none of these, use request_callback."
     )}]
 

@@ -55,13 +55,15 @@ _HINDI_KEYWORD_PATTERN = re.compile(
 _DEVANAGARI_PATTERN = re.compile(r"[ऀ-ॿ]")
 
 
-def _build_lingua_detector(languages: list[str]) -> Any:
-    """Build a lingua detector scoped to the tenant's configured languages.
+_lingua_cache: dict[tuple[str, ...], Any] = {}
 
-    Always includes English as a candidate. Returns ``None`` if fewer than
-    two lingua languages can be resolved (detection would be meaningless).
-    Lazy-imports lingua so that Sarvam-based detection never loads it.
-    """
+
+def _build_lingua_detector(languages: list[str]) -> Any:
+    """Build (or return cached) lingua detector for the given language set."""
+    cache_key = tuple(sorted(languages))
+    if cache_key in _lingua_cache:
+        return _lingua_cache[cache_key]
+
     from lingua import Language, LanguageDetectorBuilder
 
     lingua_language_map: dict[Language, str] = {
@@ -78,8 +80,11 @@ def _build_lingua_detector(languages: list[str]) -> Any:
             if code == lang_code and lingua_lang not in lingua_langs:
                 lingua_langs.append(lingua_lang)
     if len(lingua_langs) < 2:
+        _lingua_cache[cache_key] = None
         return None
-    return LanguageDetectorBuilder.from_languages(*lingua_langs).build()
+    detector = LanguageDetectorBuilder.from_languages(*lingua_langs).build()
+    _lingua_cache[cache_key] = detector
+    return detector
 
 
 class LanguageDetectorProcessor(FrameProcessor):
@@ -255,16 +260,6 @@ class LanguageDetectorProcessor(FrameProcessor):
                     )
                     return lang
 
-        latin_chars = sum(1 for c in text if c.isascii() and c.isalpha())
-        if latin_chars > 0 and devanagari_chars == 0:
-            for lang in self._languages:
-                if lang.startswith("en-"):
-                    logger.info(
-                        "Latin-only text detected (English): %s",
-                        text[:80],
-                    )
-                    return lang
-
         matches = _HINDI_KEYWORD_PATTERN.findall(text)
         if len(matches) >= _HINDI_KEYWORD_THRESHOLD:
             for lang in self._languages:
@@ -273,6 +268,16 @@ class LanguageDetectorProcessor(FrameProcessor):
                         "Hindi keywords in romanized text: %s (count=%d)",
                         matches,
                         len(matches),
+                    )
+                    return lang
+
+        latin_chars = sum(1 for c in text if c.isascii() and c.isalpha())
+        if latin_chars > 0 and devanagari_chars == 0:
+            for lang in self._languages:
+                if lang.startswith("en-"):
+                    logger.info(
+                        "Latin-only text detected (English): %s",
+                        text[:80],
                     )
                     return lang
 
@@ -287,7 +292,6 @@ class LanguageDetectorProcessor(FrameProcessor):
 
     async def _lock_in(self, language: str) -> None:
         """Lock in *language* and propagate settings changes."""
-        self._locked = True
         self._language = language
 
         # Tell STT to switch language (upstream toward the transport input).
@@ -305,6 +309,9 @@ class LanguageDetectorProcessor(FrameProcessor):
             await self._worker.queue_frame(
                 TTSUpdateSettingsFrame(delta=tts_delta)
             )
+
+        # Lock after settings propagation so state and pipeline are consistent.
+        self._locked = True
 
         # Persist to flow state.
         self._flow_state["language"] = language

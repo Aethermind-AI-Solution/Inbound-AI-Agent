@@ -17,6 +17,9 @@ Usage:
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -26,9 +29,10 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
+from urllib.parse import urlencode
 
 import uvicorn
-from fastapi import FastAPI, Form, WebSocket
+from fastapi import FastAPI, Form, Header, Request, WebSocket
 from fastapi.responses import Response
 
 project_root = Path(__file__).parent.parent.parent
@@ -56,17 +60,34 @@ RATE_WINDOW_SECONDS = 900  # 15 minutes
 
 
 def _mask_phone(phone: str) -> str:
-    if len(phone) > 4:
-        return phone[:-4] + "****"
-    return "****"
+    from packages.voice_agent.utils import mask_phone
+    return mask_phone(phone)
+
+
+def _validate_twilio_signature(url: str, params: dict[str, str], signature: str, auth_token: str) -> bool:
+    sorted_params = urlencode(sorted(params.items()))
+    data = url + sorted_params
+    expected = base64.b64encode(
+        hmac.new(auth_token.encode(), data.encode(), hashlib.sha1).digest()
+    ).decode()
+    return hmac.compare_digest(expected, signature)
 
 
 _call_timestamps: dict[str, list[float]] = defaultdict(list)
+_last_eviction: float = 0.0
 
 
 def _check_rate_limit(phone: str) -> bool:
+    global _last_eviction
     now = time_mod.monotonic()
     window_start = now - RATE_WINDOW_SECONDS
+
+    if now - _last_eviction > RATE_WINDOW_SECONDS:
+        stale = [k for k, v in _call_timestamps.items() if not v or v[-1] < window_start]
+        for k in stale:
+            del _call_timestamps[k]
+        _last_eviction = now
+
     timestamps = _call_timestamps[phone]
     _call_timestamps[phone] = [t for t in timestamps if t > window_start]
     if len(_call_timestamps[phone]) >= MAX_CALLS_PER_WINDOW:
@@ -116,10 +137,22 @@ async def health():
 
 
 @app.post("/incoming-call")
-async def incoming_call(From: str = Form("unknown"), CallSid: str = Form("unknown")):
+async def incoming_call(
+    request: Request,
+    From: str = Form("unknown"),
+    CallSid: str = Form("unknown"),
+    x_twilio_signature: str = Header("", alias="X-Twilio-Signature"),
+):
     if not TUNNEL_URL:
         logger.error("TUNNEL_URL not set — cannot build TwiML response")
         return Response(content=TWIML_ERROR, media_type="application/xml")
+
+    if TWILIO_AUTH_TOKEN and x_twilio_signature:
+        form_data = dict(await request.form())
+        url = str(request.url)
+        if not _validate_twilio_signature(url, form_data, x_twilio_signature, TWILIO_AUTH_TOKEN):
+            logger.warning("Invalid Twilio signature from %s", _mask_phone(From))
+            return Response(content=TWIML_ERROR, media_type="application/xml", status_code=403)
 
     logger.info("Incoming call from %s (CallSid=%s)", _mask_phone(From), CallSid)
 
@@ -396,9 +429,27 @@ async def _run_pipeline(
 
 
 def _load_tenant_config():
-    from packages.voice_agent.config.models import LanguagePolicy, PersonaConfig, PipelineConfig
-    from packages.voice_agent.tests.test_states.conftest import make_tenant_config
-    return make_tenant_config(
+    from packages.voice_agent.config.models import (
+        AuthConfig,
+        BookingModel,
+        BusinessHours,
+        EdgeProfile,
+        EscalationChain,
+        EscalationConfig,
+        GuardrailsConfig,
+        IntegrationConfig,
+        LanguagePolicy,
+        MetaConfig,
+        PersonaConfig,
+        PipelineConfig,
+        Resource,
+        Service,
+        TenantConfig,
+    )
+    return TenantConfig(
+        meta=MetaConfig(
+            tenant_id="t1", sector="salon", config_version="1.0.0", status="live",
+        ),
         persona=PersonaConfig(
             business_name="Glamour Salon",
             greeting={
@@ -413,6 +464,57 @@ def _load_tenant_config():
             languages=["en-IN", "hi-IN"],
             fallback_language="en-IN",
             language_policy=LanguagePolicy(greeting="default", match_caller=True),
+        ),
+        integration=IntegrationConfig(
+            calendar_provider="native_supabase",
+            write_back=False,
+            system_of_record="native",
+            external_unreachable_policy="capture",
+        ),
+        auth=AuthConfig(
+            levels=["soft"],
+            action_policy={"new_booking": "none"},
+            soft_match_fields=["caller_number"],
+        ),
+        edge_profile=EdgeProfile(
+            caller_demographic="general",
+            endpointing_ms=500,
+            barge_in=True,
+            asr_lexicon=[],
+            noise_profile="quiet",
+            dtmf_fallback=False,
+        ),
+        escalation=EscalationConfig(
+            chain=[EscalationChain(type="callback_queue")],
+            trigger_on=["repeated_failure"],
+        ),
+        booking_model=BookingModel(
+            resources=[
+                Resource(id="r1", name="Priya", type="stylist", capacity=1, tags=[]),
+                Resource(id="r2", name="Rahul", type="stylist", capacity=1, tags=[]),
+            ],
+            services=[
+                Service(
+                    id="s1", name="Haircut", resource_type="stylist",
+                    duration_min=30, booking_mode="exclusive", custom_fields=[],
+                ),
+                Service(
+                    id="s2", name="Hair Color", resource_type="stylist",
+                    duration_min=60, booking_mode="exclusive", custom_fields=[],
+                ),
+            ],
+            business_hours=BusinessHours(
+                mon=["09:00-18:00"], tue=["09:00-18:00"],
+                wed=["09:00-18:00"], thu=["09:00-18:00"],
+                fri=["09:00-18:00"], sat=["10:00-16:00"],
+            ),
+            booking_window_days=14,
+            min_notice_min=30,
+        ),
+        guardrails=GuardrailsConfig(
+            max_call_seconds=300, max_turns=20,
+            monthly_budget_inr=5000.0, scope="booking_only",
+            recording_consent=True, retention_days=90,
         ),
         pipeline=PipelineConfig(
             stt_provider="sarvam",

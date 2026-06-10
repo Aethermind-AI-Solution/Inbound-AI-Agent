@@ -105,12 +105,6 @@ class PersonaConfig(BaseModel):
             raise ValueError(f"tone must be one of {VALID_TONES}, got '{v}'")
         return v
 
-    @field_validator("languages")
-    @classmethod
-    def validate_languages(cls, v: list[str]) -> list[str]:
-        if len(v) < 1:
-            raise ValueError("languages must have at least 1 entry")
-        return v
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +233,6 @@ class EscalationConfig(BaseModel):
     chain: list[EscalationChain] = PydanticField(min_length=1)
     trigger_on: list[str]
 
-    @field_validator("chain")
-    @classmethod
-    def validate_chain(cls, v: list[EscalationChain]) -> list[EscalationChain]:
-        if len(v) < 1:
-            raise ValueError("chain must have at least 1 entry")
-        return v
 
 
 # ---------------------------------------------------------------------------
@@ -343,19 +331,6 @@ class BookingModel(BaseModel):
     booking_window_days: int = PydanticField(gt=0)
     min_notice_min: int = PydanticField(ge=0)
 
-    @field_validator("resources")
-    @classmethod
-    def validate_resources(cls, v: list[Resource]) -> list[Resource]:
-        if len(v) < 1:
-            raise ValueError("resources must have at least 1 entry")
-        return v
-
-    @field_validator("services")
-    @classmethod
-    def validate_services(cls, v: list[Service]) -> list[Service]:
-        if len(v) < 1:
-            raise ValueError("services must have at least 1 entry")
-        return v
 
 
 # ---------------------------------------------------------------------------

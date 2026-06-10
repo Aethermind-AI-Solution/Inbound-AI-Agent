@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from packages.voice_agent.utils import mask_phone
+
 logger = logging.getLogger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -15,11 +17,7 @@ FlowArgs = dict[str, Any]
 
 _PHONE_PATTERN = re.compile(r"^\+?\d{7,15}$")
 
-
-def _mask_phone(phone: str) -> str:
-    if len(phone) > 4:
-        return phone[:-4] + "****"
-    return "****"
+DATA_TIMEOUT = 8.0
 
 
 async def _write_checkpoint(flow_manager: Any, node_name: str) -> None:
@@ -77,7 +75,10 @@ async def _lookup_and_transition(flow_manager: Any, intent: str) -> tuple[str, d
     data = flow_manager.state["data_adapter"]
     tenant_id = flow_manager.state["tenant_id"]
     caller_id = flow_manager.state.get("caller_id")
-    bookings = await asyncio.to_thread(data.lookup_bookings, tenant_id, caller_id)
+    bookings = await asyncio.wait_for(
+        asyncio.to_thread(data.lookup_bookings, tenant_id, caller_id),
+        timeout=DATA_TIMEOUT,
+    )
     flow_manager.state["bookings"] = bookings
     from packages.voice_agent.flows.nodes import create_manage_booking_node
     node = await _transition(flow_manager, create_manage_booking_node, intent)
@@ -149,6 +150,9 @@ async def check_availability(args: FlowArgs, flow_manager: Any) -> tuple[str | d
                      if getattr(bm.business_hours, d, [])]
         return {"error": f"We're closed on {dt.strftime('%A')}s. We're open on: {', '.join(d.capitalize() for d in open_days)}."}, None
 
+    duration = flow_manager.state.get("service_duration_min", 30)
+    service_end_time = (dt + timedelta(minutes=duration)).time()
+
     within_hours = False
     for slot in day_hours:
         parts = slot.split("-")
@@ -156,7 +160,7 @@ async def check_availability(args: FlowArgs, flow_manager: Any) -> tuple[str | d
             continue
         open_time = datetime.strptime(parts[0], "%H:%M").time()
         close_time = datetime.strptime(parts[1], "%H:%M").time()
-        if open_time <= dt.time() <= close_time:
+        if open_time <= dt.time() and service_end_time <= close_time:
             within_hours = True
             break
     if not within_hours:
@@ -166,12 +170,16 @@ async def check_availability(args: FlowArgs, flow_manager: Any) -> tuple[str | d
     tenant_id = flow_manager.state["tenant_id"]
     service_id = flow_manager.state["service_id"]
     resource_type = flow_manager.state["resource_type"]
-    duration = flow_manager.state.get("service_duration_min", 30)
     end_dt = dt + timedelta(minutes=duration)
 
-    availability = await asyncio.to_thread(
-        data.check_availability, tenant_id, service_id, resource_type, dt, end_dt
-    )
+    try:
+        availability = await asyncio.wait_for(
+            asyncio.to_thread(data.check_availability, tenant_id, service_id, resource_type, dt, end_dt),
+            timeout=DATA_TIMEOUT,
+        )
+    except (TimeoutError, Exception):
+        logger.exception("check_availability failed or timed out")
+        return {"error": "Could not check availability right now. Please try a different time."}, None
 
     available = [r for r in availability if not r.get("blocked_slots")]
     if not available:
@@ -199,9 +207,12 @@ async def book_slot(args: FlowArgs, flow_manager: Any) -> tuple[str | dict, dict
     dt = datetime.fromisoformat(flow_manager.state["datetime_ist"])
 
     try:
-        hold = await asyncio.to_thread(data.hold_slot, tenant_id, resource_id, dt, caller_id)
-    except Exception as e:
-        logger.exception("hold_slot failed")
+        hold = await asyncio.wait_for(
+            asyncio.to_thread(data.hold_slot, tenant_id, resource_id, dt, caller_id),
+            timeout=DATA_TIMEOUT,
+        )
+    except (TimeoutError, Exception):
+        logger.exception("hold_slot failed or timed out")
         return {"error": "Could not reserve that slot. Try a different option."}, None
 
     flow_manager.state["hold_id"] = hold.hold_id
@@ -253,11 +264,14 @@ async def confirm(args: FlowArgs, flow_manager: Any) -> tuple[str | dict, dict |
     custom_values = flow_manager.state.get("custom_values", {})
 
     try:
-        result = await asyncio.to_thread(
-            data.confirm_booking,
-            tenant_id, hold_id, service_id, resource_id, caller_id, dt, end_dt, custom_values,
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                data.confirm_booking,
+                tenant_id, hold_id, service_id, resource_id, caller_id, dt, end_dt, custom_values,
+            ),
+            timeout=DATA_TIMEOUT,
         )
-    except Exception:
+    except (TimeoutError, Exception):
         logger.exception("confirm_booking failed")
         flow_manager.state["fallback_reason"] = "tool_error"
         from packages.voice_agent.flows.nodes import create_callback_capture_node
@@ -300,7 +314,14 @@ async def cancel_booking(args: FlowArgs, flow_manager: Any) -> tuple[str | dict,
     tenant_id = flow_manager.state["tenant_id"]
     caller_id = flow_manager.state["caller_id"]
 
-    success = await asyncio.to_thread(data.cancel_booking, tenant_id, booking_id, caller_id)
+    try:
+        success = await asyncio.wait_for(
+            asyncio.to_thread(data.cancel_booking, tenant_id, booking_id, caller_id),
+            timeout=DATA_TIMEOUT,
+        )
+    except (TimeoutError, Exception):
+        logger.exception("cancel_booking failed or timed out")
+        return {"error": "Could not cancel right now. Please try again."}, None
     if not success:
         return {"error": "Could not cancel that booking. It may have already been cancelled."}, None
 
@@ -313,9 +334,20 @@ async def start_reschedule(args: FlowArgs, flow_manager: Any) -> tuple[str, dict
     booking_id = args.get("booking_id", "")
     flow_manager.state["reschedule_booking_id"] = booking_id
     flow_manager.state["intent"] = "reschedule"
-    from packages.voice_agent.flows.nodes import create_collect_service_node
-    node = await _transition(flow_manager, create_collect_service_node)
-    return "Let's reschedule.", node
+    bookings = flow_manager.state.get("bookings", [])
+    booking = next((b for b in bookings if b["id"] == booking_id), None)
+    if booking:
+        service_id = booking.get("service_id")
+        config = flow_manager.state["config"]
+        svc = next((s for s in config.booking_model.services if s.id == service_id), None)
+        if svc:
+            flow_manager.state["service_id"] = svc.id
+            flow_manager.state["service_name"] = svc.name
+            flow_manager.state["service_duration_min"] = svc.duration_min
+            flow_manager.state["resource_type"] = svc.resource_type
+    from packages.voice_agent.flows.nodes import create_collect_datetime_node
+    node = await _transition(flow_manager, create_collect_datetime_node)
+    return "Let's pick a new date and time.", node
 
 
 async def done(args: FlowArgs, flow_manager: Any) -> tuple[str, dict | None]:
@@ -331,7 +363,7 @@ async def confirm_callback(args: FlowArgs, flow_manager: Any) -> tuple[str | dic
     if not _PHONE_PATTERN.match(phone.replace(" ", "").replace("-", "")):
         return {"error": "That doesn't look like a valid phone number. Please ask for the number again."}, None
     flow_manager.state["callback_number"] = phone
-    logger.info("Callback confirmed for %s", _mask_phone(phone))
+    logger.info("Callback confirmed for %s", mask_phone(phone))
     from packages.voice_agent.flows.nodes import create_close_node
     node = await _transition(flow_manager, create_close_node)
     return "We'll call back shortly.", node
